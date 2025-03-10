@@ -29,7 +29,7 @@ DEFAULT_HEADERS = {
     "Referer": f"{BASE_URL}/login/",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,vi;q=0.7",
 }
-TOKEN_FILE = "access_token.json"
+TOKEN_FILE = "../access_token.json"
 TOKEN_EXPIRE_SECONDS = 6 * 60 * 60  # 6小时
 IMAGE_SCALE_FACTOR = 400 / 310  # 图像缩放比例
 CAPTCHA_OFFSET = 2.5  # 验证码坐标偏移量
@@ -176,7 +176,7 @@ class AuthManager:
                 ),
                 "randomStr": "blockPuzzle"
             },
-            json={"sskjPassword": "qnsXYUm303WQpeci1uwc+w=="},
+            json={"sskjPassword": "2giTy1DTppbddyVBc0F6gMdSpT583XjDyJJxME2ocJ4="},
             timeout=10
         )
 
