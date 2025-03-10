@@ -12,10 +12,12 @@ from PIL import Image
 import io
 import time
 from datetime import datetime
+from typing import Tuple, Optional
 
-base_url = "https://zhcjsmz.sc.yichang.gov.cn"
-
-headers = {
+# 常量配置
+BASE_URL = "https://zhcjsmz.sc.yichang.gov.cn"
+ACCESS_TOKEN_FILE = "../access_token.json"
+DEFAULT_HEADERS = {
     "Host": "zhcjsmz.sc.yichang.gov.cn",
     "Connection": "keep-alive",
     "sec-ch-ua": '"Not.A/Brand";v="8", "Chromium";v="114"',
@@ -27,242 +29,233 @@ headers = {
     "Origin": "https://zhcjsmz.sc.yichang.gov.cn",
     "Referer": "https://zhcjsmz.sc.yichang.gov.cn/login/",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,vi;q=0.7",
-    "Accept-Encoding": "gzip, deflate",
 }
+CREDENTIALS = {
+    "username": "13487283013",
+    "encrypted_password": "qnsXYUm303WQpeci1uwc+w=="
+}
+SCALE_FACTOR = 400 / 310  # 图像缩放系数
+POS_Y_OFFSET = 5          # Y轴偏移量
+X_ADJUSTMENT = -2.5       # X轴位置调整值
 
-# 加密函数
-def aes_encrypt(word, key_word):
-    key = bytes(key_word, 'utf-8')
-    srcs = bytes(word, 'utf-8')
+class AESHelper:
+    @staticmethod
+    def encrypt(plaintext: str, key: str) -> str:
+        """AES ECB模式加密"""
+        cipher = AES.new(key.encode(), AES.MODE_ECB)
+        return base64.b64encode(
+            cipher.encrypt(pad(plaintext.encode(), AES.block_size))
+        ).decode()
 
-    cipher = AES.new(key, AES.MODE_ECB)
-    encrypted = cipher.encrypt(pad(srcs, AES.block_size))
+    @staticmethod
+    def decrypt(ciphertext: str, key: str) -> str:
+        """AES ECB模式解密"""
+        cipher = AES.new(key.encode(), AES.MODE_ECB)
+        return unpad(
+            cipher.decrypt(base64.b64decode(ciphertext)), 
+            AES.block_size
+        ).decode()
 
-    return base64.b64encode(encrypted).decode('utf-8')
+class CaptchaSolver:
+    @staticmethod
+    def generate_client_uuid() -> str:
+        """生成客户端UUID"""
+        hex_digits = "0123456789abcdef"
+        chars = [random.choice(hex_digits) for _ in range(36)]
+        chars[8] = chars[13] = chars[18] = chars[23] = "-"
+        chars[14] = "4"
+        chars[19] = hex_digits[(int(chars[19], 16) & 0x3) | 0x8]
+        return f"slider-{''.join(chars)}"
 
-def aes_decrypt(ciphertext, key_word):
-    key = bytes(key_word, 'utf-8')
-    ciphertext = base64.b64decode(ciphertext)
-
-    cipher = AES.new(key, AES.MODE_ECB)
-    decrypted = unpad(cipher.decrypt(ciphertext), AES.block_size)
-
-    return decrypted.decode('utf-8')
-
-# 初始化 UUID
-def generate_client_uuid():
-    s = []
-    hex_digits = "0123456789abcdef"
-    for i in range(36):
-        s.append(hex_digits[random.randint(0, 15)])
-    s[14] = "4"  # time_hi_and_version字段的12-15位设置为0010
-    s[19] = hex_digits[(int(s[19], 16) & 0x3) | 0x8]  # clock_seq_hi_and_reserved字段的6-7位设置为01
-    s[8] = s[13] = s[18] = s[23] = "-"
-    slider = 'slider' + '-' + ''.join(s)
-    return slider
-
-# 获取图片函数
-def getImgPos(bg, tp, scale_factor):
-    '''
-    bg: 背景图片
-    tp: 缺口图片
-    out:输出图片
-    '''
-    # 解码Base64字符串为字节对象
-    bg = base64.b64decode(bg)
-    tp = base64.b64decode(tp)
-
-    # 读取背景图片和缺口图片
-    bg_img = cv2.imdecode(np.frombuffer(bg, np.uint8), cv2.IMREAD_COLOR) # 背景图片
-    tp_img = cv2.imdecode(np.frombuffer(tp, np.uint8), cv2.IMREAD_COLOR)  # 缺口图片
-
-    # 对图像进行缩放
-    bg_img = cv2.resize(bg_img, (0, 0), fx=scale_factor, fy=scale_factor)
-    tp_img = cv2.resize(tp_img, (0, 0), fx=scale_factor, fy=scale_factor)
-
-    # 识别图片边缘
-    bg_edge = cv2.Canny(bg_img, 50, 400)
-    tp_edge = cv2.Canny(tp_img, 50, 400)
-
-    # 转换图片格式
-    bg_pic = cv2.cvtColor(bg_edge, cv2.COLOR_GRAY2RGB)
-    tp_pic = cv2.cvtColor(tp_edge, cv2.COLOR_GRAY2RGB)
-
-    # 缺口匹配
-    res = cv2.matchTemplate(bg_pic, tp_pic, cv2.TM_CCOEFF_NORMED)
-    _, _, _, max_loc = cv2.minMaxLoc(res)  # 寻找最优匹配
-
-    # 缩放坐标
-    #scaled_max_loc = (max_loc[0] * scale_factor, max_loc[1] * scale_factor)
-
-    # 绘制方框
-    th, tw = tp_pic.shape[:2]
-    tl = max_loc  # 左上角点的坐标
-    br = (tl[0] + tw, tl[1] + th)  # 右下角点的坐标
-    cv2.rectangle(bg_img, (int(tl[0]), int(tl[1])), (int(br[0]), int(br[1])), (0, 0, 255), 2)  # 绘制矩形
-
-    # 保存至本地
-    output_path = os.path.join(os.getcwd(), "output_imageX.jpg")
-    cv2.imwrite(output_path, bg_img)
-    tp_img_path = os.path.join(os.getcwd(), "tp_imgX.jpg")
-    cv2.imwrite(tp_img_path, tp_img)
-
-    logger.info(f"缺口的X坐标: {max_loc[0]:.4f}")
-
-    # 返回缺口的X坐标
-    return max_loc[0] - 2.5
-
-# 接受原始图像的Base64编码字符串和新的宽度作为参数，返回调整大小后的图像的Base64编码字符串
-def resize_image(base64_string, new_width):
-    # 将Base64字符串解码为字节数据
-    image_data = base64.b64decode(base64_string)
-
-    # 将字节数据转换为图像对象
-    image = Image.open(io.BytesIO(image_data))
-
-    # 确保图像的模式是RGB
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-
-    # 计算高度以保持宽高比
-    original_width, original_height = image.size
-    new_height = int((new_width / original_width) * original_height)
-
-    # 调整图像大小
-    resized_image = image.resize((new_width, new_height))
-
-    # 将调整大小后的图像转换为Base64字符串
-    buffered = io.BytesIO()
-    resized_image.save(buffered, format="JPEG")
-    resized_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-    return resized_base64
-
-# Function to read the existing access token and timestamp from access_token.json
-def read_access_token():
-    try:
-        with open('access_token.json', 'r') as json_file:
-            data = json.load(json_file)
-            return data.get('access_token'), data.get('timestamp', 0)
-    except FileNotFoundError:
-        return None, 0
-
-
-# Read the existing access token and timestamp
-existing_access_token, existing_timestamp = read_access_token()
-
-# Check if the access token is not present or if the timestamp difference is greater than 6 hours
-if not existing_access_token or (time.time() - existing_timestamp) > (6 * 60 * 60):
-    # 创建一个对话
-    session = requests.session()
-    response = session.get("https://zhcjsmz.sc.yichang.gov.cn/login/#/login", headers=headers)
-
-    # 随机生成 UUID
-    clientUUID = generate_client_uuid()
-
-    # 获取当前时间戳
-    current_timestamp_milliseconds = round(time.time() * 1000)
-
-    data = {
-        "captchaType": "blockPuzzle",
-        "clientUid": clientUUID,
-        "ts": current_timestamp_milliseconds
-    }
-
-    # 获取图片
-    response = session.post(f"{base_url}/code/create", headers=headers, json=data)
-    response_data = response.json()  # Use response.json() to parse JSON
-    logger.info(f"返回response.cookies: {response.cookies.get_dict()}")
-    # 提取值
-    secret_key = response_data["data"]["repData"]["secretKey"]
-    token = response_data["data"]["repData"]["token"]
-
-    bg_img_base64 = response_data["data"]["repData"]["originalImageBase64"]
-    hk_img_base64 = response_data["data"]["repData"]["jigsawImageBase64"]
-
-    pos = getImgPos(bg_img_base64, hk_img_base64, scale_factor=400/310)
-
-    formatted_pos = pos
-
-    logger.info(f"pos文本: {formatted_pos}")
-
-    posStr = '{"x":' + str(formatted_pos*(310/400)) + ',"y":5}'
-    logger.info(f"posStr文本: {posStr}")
-    pointJson = aes_encrypt(posStr, secret_key)
-
-    logger.info(f"加密后的文本pointJson_text: {pointJson}")
-
-    pverdat = json.dumps({
-        "captchaType": "blockPuzzle",
-        "clientUid": clientUUID,
-        "pointJson": pointJson,
-        "token": token,
-        "ts": current_timestamp_milliseconds
-    })
-    logger.info(f"图片检查传参: {pverdat}")
-
-    htm = session.post(f"{base_url}/code/check", json=json.loads(pverdat), headers=headers)  # Use json parameter
-    logger.info(f"返回htm_text: {htm.text}")
-    logger.info(f"返回htm.cookies: {htm.cookies.get_dict()}")
-    
-    if '执行成功' in htm.json()['msg']:
-        #time.sleep(3 + 2 * random.random())
-        
-        posStr = '{"x":' + str(formatted_pos*(310/400)) + ',"y":5}'
-        captcha = aes_encrypt(token + '---' + posStr, secret_key)
-        logger.info(f"二次加密后的文本captcha_text: {captcha}")
-        decoded_captcha = aes_decrypt(captcha, secret_key)
-        logger.info(f"解码密文: {decoded_captcha}")
-        
-        pverdat2 = json.dumps({
-            "sskjPassword": "qnsXYUm303WQpeci1uwc+w==",
-            "username":"13487283013",
-            "password":"13487283013",
-            "grant_type":"password",
-            "scope":"server",
-            "code":captcha,
-            "randomStr":"blockPuzzle"
-        })
-        logger.info(f"图片检查传参: {pverdat2}")
-        headers["Authorization"] = "Basic cGlnOnBpZw=="
-        headers["TENANT-ID"] = "1"
-    
-        #htm = session.get(f"{base_url}/auth/custom/token", data=pverdat2, headers=headers)
-        pverdat3 = json.dumps({
-            "sskjPassword": "qnsXYUm303WQpeci1uwc+w==",
-            
-        })
-        logger.info(f"headers: {headers}")
-        htm = session.post(f"{base_url}/auth/custom/token?username=13487283013&grant_type=password&scope=server&code={captcha}&randomStr=blockPuzzle", data=pverdat3, headers=headers)
-    
+    @staticmethod
+    def calculate_position(bg_base64: str, tp_base64: str) -> float:
+        """计算验证码位置"""
         try:
-            logger.info(f"返回htm_text: {htm.text}")
-            access_token_value = htm.json()['access_token']
-            logger.info(f"返回access_token: {access_token_value}")
-    
-            # Create a dictionary with access_token and timestamp
-            access_token_data = {
-                'access_token': access_token_value,
-                'timestamp': int(time.time())  # Current timestamp in seconds
-            }
-    
-            # Write the dictionary to a local JSON file
-            with open('access_token.json', 'w') as json_file:
-                json.dump(access_token_data, json_file)
-    
-        except KeyError:
-            pass
+            bg_img = CaptchaSolver._decode_image(bg_base64, SCALE_FACTOR)
+            tp_img = CaptchaSolver._decode_image(tp_base64, SCALE_FACTOR)
+            
+            bg_edge = cv2.Canny(bg_img, 50, 400)
+            tp_edge = cv2.Canny(tp_img, 50, 400)
+
+            res = cv2.matchTemplate(
+                cv2.cvtColor(bg_edge, cv2.COLOR_GRAY2RGB),
+                cv2.cvtColor(tp_edge, cv2.COLOR_GRAY2RGB),
+                cv2.TM_CCOEFF_NORMED
+            )
+            _, _, _, max_loc = cv2.minMaxLoc(res)
+            return max_loc[0] * (1/SCALE_FACTOR) + X_ADJUSTMENT
+        except Exception as e:
+            logger.error(f"验证码处理失败: {str(e)}")
+            raise
+
+    @staticmethod
+    def _decode_image(base64_str: str, scale: float) -> np.ndarray:
+        """解码并缩放图像"""
+        img_data = base64.b64decode(base64_str)
+        img = cv2.imdecode(np.frombuffer(img_data, np.uint8), cv2.IMREAD_COLOR)
+        return cv2.resize(img, (0,0), fx=scale, fy=scale)
+
+class AuthManager:
+    @staticmethod
+    def get_access_token() -> Optional[str]:
+        """获取访问令牌主流程"""
+        session = requests.Session()
+        try:
+            # 初始化验证流程
+            client_uuid = CaptchaSolver.generate_client_uuid()
+            timestamp = int(time.time() * 1000)
+
+            # 获取验证码数据
+            captcha_data = AuthManager._get_captcha_data(
+                session, client_uuid, timestamp)
+            if not captcha_data:
+                return None
+
+            # 计算验证码位置
+            position = CaptchaSolver.calculate_position(
+                captcha_data["bg_img"], 
+                captcha_data["tp_img"]
+            )
+            
+            # 验证验证码
+            if not AuthManager._verify_captcha(
+                session, position, captcha_data, timestamp):
+                return None
+
+            # 获取访问令牌
+            return AuthManager._request_token(session, captcha_data)
+            
+        except Exception as e:
+            logger.error(f"认证流程异常: {str(e)}")
+            return None
         finally:
             session.close()
-else:
-    # 获取当前时间戳
-    current_timestamp = time.time()
 
-    # 将时间戳转换为日期时间对象
-    current_datetime = datetime.fromtimestamp(current_timestamp)
+    @staticmethod
+    def _get_captcha_data(session: requests.Session, 
+                         client_uuid: str, 
+                         timestamp: int) -> Optional[dict]:
+        """获取验证码数据"""
+        try:
+            response = session.post(
+                f"{BASE_URL}/code/create",
+                json={
+                    "captchaType": "blockPuzzle",
+                    "clientUid": client_uuid,
+                    "ts": timestamp
+                },
+                headers=DEFAULT_HEADERS
+            )
+            response.raise_for_status()
+            data = response.json()["data"]["repData"]
+            return {
+                "secret_key": data["secretKey"],
+                "token": data["token"],
+                "bg_img": data["originalImageBase64"],
+                "tp_img": data["jigsawImageBase64"]
+            }
+        except Exception as e:
+            logger.error(f"获取验证码失败: {str(e)}")
+            return None
 
-    # 将日期时间对象格式化为字符串
-    formatted_time = current_datetime.strftime('%Y-%m-%d %H:%M:%S')
-    print('无需更新access_token验证。', formatted_time)
+    @staticmethod
+    def _verify_captcha(session: requests.Session,
+                       position: float,
+                       captcha_data: dict,
+                       timestamp: int) -> bool:
+        """验证验证码"""
+        try:
+            pos_str = json.dumps({"x": position, "y": POS_Y_OFFSET})
+            encrypted_pos = AESHelper.encrypt(
+                pos_str, 
+                captcha_data["secret_key"]
+            )
 
-    exit()
+            response = session.post(
+                f"{BASE_URL}/code/check",
+                json={
+                    "captchaType": "blockPuzzle",
+                    "clientUid": captcha_data["clientUid"],
+                    "pointJson": encrypted_pos,
+                    "token": captcha_data["token"],
+                    "ts": timestamp
+                },
+                headers=DEFAULT_HEADERS
+            )
+            response.raise_for_status()
+            return "执行成功" in response.json().get("msg", "")
+        except Exception as e:
+            logger.error(f"验证码验证失败: {str(e)}")
+            return False
+
+    @staticmethod
+    def _request_token(session: requests.Session,
+                      captcha_data: dict) -> Optional[str]:
+        """请求访问令牌"""
+        try:
+            captcha = AESHelper.encrypt(
+                f"{captcha_data['token']}---{{\"x\":{position}, \"y\":5}}",
+                captcha_data["secret_key"]
+            )
+
+            headers = DEFAULT_HEADERS.copy()
+            headers.update({
+                "Authorization": "Basic cGlnOnBpZw==",
+                "TENANT-ID": "1"
+            })
+
+            response = session.post(
+                f"{BASE_URL}/auth/custom/token",
+                params={
+                    "username": CREDENTIALS["username"],
+                    "grant_type": "password",
+                    "scope": "server",
+                    "code": captcha,
+                    "randomStr": "blockPuzzle"
+                },
+                json={"sskjPassword": CREDENTIALS["encrypted_password"]},
+                headers=headers
+            )
+            response.raise_for_status()
+            return response.json()["access_token"]
+        except Exception as e:
+            logger.error(f"令牌请求失败: {str(e)}")
+            return None
+
+def main():
+    # 检查现有令牌有效性
+    token, timestamp = _read_access_token()
+    if token and time.time() - timestamp < 6 * 3600:
+        logger.info("有效访问令牌已存在")
+        return
+
+    # 获取新令牌
+    new_token = AuthManager.get_access_token()
+    if new_token:
+        _save_access_token(new_token)
+        logger.success("访问令牌更新成功")
+    else:
+        logger.error("未能获取新访问令牌")
+
+def _read_access_token() -> Tuple[Optional[str], int]:
+    """读取存储的访问令牌"""
+    try:
+        with open(ACCESS_TOKEN_FILE, "r") as f:
+            data = json.load(f)
+            return data.get("access_token"), data.get("timestamp", 0)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None, 0
+
+def _save_access_token(token: str):
+    """保存访问令牌"""
+    try:
+        with open(ACCESS_TOKEN_FILE, "w") as f:
+            json.dump({
+                "access_token": token,
+                "timestamp": int(time.time())
+            }, f)
+    except IOError as e:
+        logger.error(f"令牌保存失败: {str(e)}")
+
+if __name__ == "__main__":
+    main()
