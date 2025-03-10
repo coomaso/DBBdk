@@ -31,7 +31,6 @@ jobs:
         python3 -m pip install --upgrade pip
         pip install  pycryptodome requests loguru opencv-python-headless numpy pillow
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
     - name: Python with access_token.py
       run: |
         python3 access_token.py
