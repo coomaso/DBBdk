@@ -217,7 +217,7 @@ if not existing_access_token or (time.time() - existing_timestamp) > (6 * 60 * 6
         pverdat2 = json.dumps({
             "sskjPassword": "qnsXYUm303WQpeci1uwc+w==",
             "username":"13487283013",
-            "password":"YCsmz@#Zhou88910440",
+            "password":"13487283013",
             "grant_type":"password",
             "scope":"server",
             "code":captcha,
@@ -229,7 +229,7 @@ if not existing_access_token or (time.time() - existing_timestamp) > (6 * 60 * 6
     
         #htm = session.get(f"{base_url}/auth/custom/token", data=pverdat2, headers=headers)
         pverdat3 = json.dumps({
-            "sskjPassword": "qnsXYUm303WQpeci1uwc+w==",
+            "sskjPassword": "2giTy1DTppbddyVBc0F6gMdSpT583XjDyJJxME2ocJ4=",
             
         })
         logger.info(f"headers: {headers}")
@@ -247,7 +247,7 @@ if not existing_access_token or (time.time() - existing_timestamp) > (6 * 60 * 6
             }
     
             # Write the dictionary to a local JSON file
-            with open('access_token.json', 'w') as json_file:
+            with open('../access_token.json', 'w') as json_file:
                 json.dump(access_token_data, json_file)
     
         except KeyError:
