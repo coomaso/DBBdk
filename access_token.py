@@ -231,7 +231,7 @@ class AuthClient:
             resp.raise_for_status()
             
             data = resp.json()["data"]["repData"]
-            logger.info(f"验证码数据:{data['token']}")
+            logger.info(f"验证码数据:{data}")
             return {
                 "client_uuid": client_uuid,
                 "secret_key": data["secretKey"],
