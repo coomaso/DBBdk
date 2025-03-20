@@ -27,7 +27,7 @@ CONFIG = {
     "token_file": Path(os.path.expanduser("~/access_token.json")),
     "api_timeout": 15,
     "retry": {
-        "max_attempts": 10,
+        "max_attempts": 5,
         "initial_delay": 2,
         "backoff_factor": 2
     },
@@ -231,6 +231,7 @@ class AuthClient:
             resp.raise_for_status()
             
             data = resp.json()["data"]["repData"]
+            logger.info(f"验证码数据: {data}")
             return {
                 "client_uuid": client_uuid,
                 "secret_key": data["secretKey"],
@@ -238,7 +239,7 @@ class AuthClient:
                 "bg_img": data["originalImageBase64"],
                 "tp_img": data["jigsawImageBase64"]
             }
-            logger.info(f"验证码数据: {data}")
+            
         except (KeyError, requests.RequestException) as e:
             logger.error(f"获取验证码失败: {str(e)}")
             return None
