@@ -24,10 +24,10 @@ os.environ.update({
 # 全局配置常量
 CONFIG = {
     "base_url": "https://zhcjsmz.sc.yichang.gov.cn",
-    "token_file": Path(__file__).parent.parent / "access_token.json",
+    "token_file": os.path.expanduser("~/access_token.json"),
     "api_timeout": 15,
     "retry": {
-        "max_attempts": 3,
+        "max_attempts": 10,
         "initial_delay": 2,
         "backoff_factor": 2
     },
