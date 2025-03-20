@@ -296,8 +296,7 @@ class AuthClient:
                     "randomStr": "blockPuzzle"
                 },
                 json={
-                    "sskjPassword": CONFIG["credentials"]["sskj_secret"],
-                    "password": CONFIG["credentials"]["password"]
+                    "sskjPassword": CONFIG["credentials"]["sskj_secret"]
                 },
                 timeout=CONFIG["api_timeout"]
             )
