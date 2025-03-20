@@ -238,6 +238,7 @@ class AuthClient:
                 "bg_img": data["originalImageBase64"],
                 "tp_img": data["jigsawImageBase64"]
             }
+            logger.info(f"验证码数据: {data}")
         except (KeyError, requests.RequestException) as e:
             logger.error(f"获取验证码失败: {str(e)}")
             return None
