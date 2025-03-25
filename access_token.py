@@ -4,333 +4,264 @@ import base64
 import requests
 import json
 import random
-import os
-import time
+from loguru import logger
 import cv2
 import numpy as np
-from pathlib import Path
-from loguru import logger
+import os
 from PIL import Image
+from pathlib import Path
 import io
-from typing import Optional, Dict, Tuple
+import time
+from datetime import datetime, timedelta
 
-# 环境变量配置（生产环境应通过外部设置）
-os.environ.update({
-    "AUTH_USER": "13487283013",
-    "AUTH_PWD": "YCsmz@#Zhou88910440",
-    "SSKJ_SECRET": "2giTy1DTppbddyVBc0F6gMdSpT583XjDyJJxME2ocJ4="
-})
+# 配置参数
+max_attempts = 20
+idCardSign = "MDoCAQEwEgIBATAKBggqgRzPVQFoAQoBAQMhALC5L1lSMTEQLmI33J1qUDVhRVwTyt+e+27ntIC3g2Wb"
+BASE_url = "https://zhcjsmz.sc.yichang.gov.cn"
+login_url = "https://zhcjsmz.sc.yichang.gov.cn/labor/workordereng/getEngsPageByUser"
+wexinqq_url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=9b81f009-c046-4812-8690-76763d6b1abd"
 
-# 全局配置常量
-CONFIG = {
-    "base_url": "https://zhcjsmz.sc.yichang.gov.cn",
-    "token_file": Path(os.path.expanduser("~/access_token.json")),
-    "api_timeout": 15,
-    "retry": {
-        "max_attempts": 5,
-        "initial_delay": 2,
-        "backoff_factor": 2
-    },
-    "captcha": {
-        "scale_factor": 400/310,
-        "base_width": 310,
-        "edge_threshold": (50, 200),
-        "min_confidence": 0.4,
-        "offset": 2.5
-    },
-    "credentials": {
-        "username": os.getenv("AUTH_USER"),
-        "password": os.getenv("AUTH_PWD"),
-        "sskj_secret": os.getenv("SSKJ_SECRET")
-    },
-    "headers": {
-        "Host": "zhcjsmz.sc.yichang.gov.cn",
-        "Accept": "*/*",
-        "Content-Type": "application/json;charset=UTF-8",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.289 Safari/537.36",
-        "Referer": "https://zhcjsmz.sc.yichang.gov.cn/login/",
-    },
-    "auth_headers": {
-        "Authorization": "Basic cGlnOnBpZw==",
-        "TENANT-ID": "1"
-    }
+headers = {
+    "Host": "zhcjsmz.sc.yichang.gov.cn",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.289 Safari/537.36",
+    "Authorization": "Basic cGlnOnBpZw=="
 }
 
-class CryptoUtils:
-    """加解密工具类"""
-    
-    @staticmethod
-    def aes_encrypt(plaintext: str, key: str) -> str:
-        """AES-ECB加密"""
-        cipher = AES.new(key.encode(), AES.MODE_ECB)
-        padded = pad(plaintext.encode(), AES.block_size)
-        return base64.b64encode(cipher.encrypt(padded)).decode()
+# ================== Token 管理 ==================
+def save_token(access_token, expires_in):
+    """保存Token及相关时间信息"""
+    token_data = {
+        'access_token': access_token,
+        'expiry_time': time.time() + expires_in,
+        'obtained_time': time.time()
+    }
+    with open('token.json', 'w') as f:
+        json.dump(token_data, f)
 
-    @staticmethod
-    def aes_decrypt(ciphertext: str, key: str) -> str:
-        """AES-ECB解密"""
-        cipher = AES.new(key.encode(), AES.MODE_ECB)
-        decrypted = cipher.decrypt(base64.b64decode(ciphertext))
-        return unpad(decrypted, AES.block_size).decode()
+def load_token():
+    """加载本地存储的Token"""
+    try:
+        with open('token.json', 'r') as f:
+            token_data = json.load(f)
+            # 验证必要字段存在
+            if all(key in token_data for key in ['access_token', 'expiry_time', 'obtained_time']):
+                return token_data
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        pass
+    return None
 
-class CaptchaHandler:
-    """验证码处理模块"""
-    
-    _CALIBRATION_FACTOR = 0.2  # 校准学习率
-    
-    def __init__(self):
-        self.offset = CONFIG["captcha"]["offset"]
-        
-    @staticmethod
-    def generate_uuid() -> str:
-        """生成验证码客户端UUID"""
-        chars = [random.choice("0123456789abcdef") for _ in range(36)]
-        uuid_pattern = [8, 13, 18, 23]
-        for pos in uuid_pattern:
-            chars[pos] = "-"
-        chars[14] = "4"
-        chars[19] = f"{int(chars[19], 16) & 0x3 | 0x8:x}"
-        return f"slider-{''.join(chars)}"
+def is_token_valid(token_data):
+    """检查Token是否有效（12小时机制）"""
+    if not token_data:
+        return False
+    current_time = time.time()
+    # Token有效期剩余至少5分钟 且 未超过12小时
+    return (token_data['expiry_time'] > current_time + 300) and \
+           (current_time - token_data['obtained_time'] < 12 * 3600)
 
-    def analyze_position(self, bg_base64: str, tp_base64: str) -> Optional[float]:
-        """分析验证码缺口位置"""
+# ================== 加解密函数 ==================
+def aes_encrypt(word, key_word):
+    key = bytes(key_word, 'utf-8')
+    cipher = AES.new(key, AES.MODE_ECB)
+    return base64.b64encode(cipher.encrypt(pad(word.encode(), AES.block_size))).decode()
+
+def aes_decrypt(ciphertext, key_word):
+    key = bytes(key_word, 'utf-8')
+    cipher = AES.new(key, AES.MODE_ECB)
+    return unpad(cipher.decrypt(base64.b64decode(ciphertext)), AES.block_size).decode()
+
+# ================== 验证码处理 ==================
+def generate_client_uuid():
+    """生成客户端UUID"""
+    return f"slider-{''.join(random.choices('0123456789abcdef', k=8))}" \
+           f"-{''.join(random.choices('0123456789abcdef', k=4))}" \
+           f"-4{''.join(random.choices('0123456789abcdef', k=3))}" \
+           f"-{random.choice('89ab')}{''.join(random.choices('0123456789abcdef', k=3))}" \
+           f"-{''.join(random.choices('0123456789abcdef', k=12))}"
+
+def getImgPos(bg, tp, scale_factor=400/310):
+    """图像识别核心逻辑"""
+    bg_img = cv2.imdecode(np.frombuffer(base64.b64decode(bg), cv2.IMREAD_COLOR))
+    tp_img = cv2.imdecode(np.frombuffer(base64.b64decode(tp), cv2.IMREAD_COLOR))
+    
+    bg_img = cv2.resize(bg_img, (0,0), fx=scale_factor, fy=scale_factor)
+    tp_img = cv2.resize(tp_img, (0,0), fx=scale_factor, fy=scale_factor)
+    
+    res = cv2.matchTemplate(cv2.Canny(bg_img, 50, 400),
+                           cv2.Canny(tp_img, 50, 400),
+                           cv2.TM_CCOEFF_NORMED)
+    return cv2.minMaxLoc(res)[3][0] * (310/400) - 2.5
+
+# ================== 通知发送 ==================
+def send_wexinqq_md(content):
+    """发送Markdown消息到企业微信"""
+    return requests.post(
+        wexinqq_url,
+        json={'msgtype': 'markdown', 'markdown': {'content': content}}
+    ).json()
+
+# ================== 数据监控 ==================
+def load_existing_ids():
+    """加载已记录的ID集合"""
+    try:
+        with open('ids.json') as f:
+            return set(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+def save_new_ids(ids):
+    """保存新的ID集合"""
+    with open('ids.json', 'w') as f:
+        json.dump(list(ids), f)
+
+def fetch_all_records(access_token):
+    """获取所有分页数据"""
+    headers = {
+        "Authorization": f"bearer {access_token}",
+        **{k:v for k,v in headers.items() if k != "Authorization"}
+    }
+    
+    all_records = []
+
+    while True:
         try:
-            # 图像解码
-            bg_img = self._decode_image(bg_base64)
-            tp_img = self._decode_image(tp_base64)
-            
-            # 图像预处理
-            bg_processed = self._preprocess_image(bg_img)
-            tp_processed = self._preprocess_image(tp_img)
-            
-            # 模板匹配
-            result = cv2.matchTemplate(bg_processed, tp_processed, cv2.TM_CCOEFF_NORMED)
-            confidence = np.max(result)
-            
-            if confidence < CONFIG["captcha"]["min_confidence"]:
-                raise ValueError(f"可信度过低: {confidence:.2f}")
-                
-            _, _, _, max_loc = cv2.minMaxLoc(result)
-            return max_loc[0] - self.offset
-        except Exception as e:
-            logger.error(f"验证码分析失败: {str(e)}")
-            return None
-
-    def calibrate_offset(self, actual_pos: float, detected_pos: float):
-        """校准偏移量"""
-        self.offset += (actual_pos - detected_pos) * self._CALIBRATION_FACTOR
-        logger.info(f"校准偏移量至: {self.offset:.2f}px")
-
-    def _decode_image(self, base64_str: str) -> np.ndarray:
-        """Base64解码图像"""
-        img_data = base64.b64decode(base64_str)
-        img = cv2.imdecode(np.frombuffer(img_data, np.uint8), cv2.IMREAD_COLOR)
-        return cv2.resize(
-            img, 
-            (0,0), 
-            fx=CONFIG["captcha"]["scale_factor"], 
-            fy=CONFIG["captcha"]["scale_factor"]
-        )
-
-    def _preprocess_image(self, img: np.ndarray) -> np.ndarray:
-        """图像预处理流程"""
-        # 高斯模糊降噪
-        blurred = cv2.GaussianBlur(img, (5, 5), 0)
-        # 边缘检测
-        edges = cv2.Canny(blurred, *CONFIG["captcha"]["edge_threshold"])
-        # 形态学操作
-        kernel = np.ones((3,3), np.uint8)
-        return cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
-
-class AuthClient:
-    """认证客户端主类"""
-    
-    def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update(CONFIG["headers"])
-        self.captcha_handler = CaptchaHandler()
-        self._init_token_file()
-
-    def _init_token_file(self):
-        """初始化令牌存储文件"""
-        try:
-            CONFIG["token_file"].parent.mkdir(parents=True, exist_ok=True)
-            CONFIG["token_file"].touch(exist_ok=True)
-        except PermissionError:
-            logger.critical("缺少文件写入权限")
-            raise
-
-    def get_access_token(self) -> Optional[str]:
-        """获取访问令牌（主入口）"""
-        if token := self._read_cached_token():
-            return token
-            
-        return self._acquire_new_token_with_retry()
-
-    def _read_cached_token(self) -> Optional[str]:
-        """读取缓存的访问令牌"""
-        try:
-            with open(CONFIG["token_file"], "r") as f:
-                data = json.load(f)
-                if time.time() - data["timestamp"] < 6 * 3600:
-                    logger.info("使用有效缓存令牌")
-                    return data["access_token"]
-        except (FileNotFoundError, json.JSONDecodeError, KeyError):
-            pass
-        return None
-
-    def _acquire_new_token_with_retry(self) -> Optional[str]:
-        """带重试的认证流程"""
-        attempt = 1
-        max_retries = CONFIG["retry"]["max_attempts"]
-        while attempt <= max_retries:
-            logger.info(f"认证尝试 {attempt}/{max_retries}")
-            
-            try:
-                # 获取验证码数据
-                captcha_data = self._get_captcha_data()
-                if not captcha_data:
-                    continue
-                
-                # 验证验证码
-                if not self._verify_captcha(captcha_data):
-                    continue
-                
-                # 获取访问令牌
-                if token := self._request_token(captcha_data):
-                    return token
-                    
-            except requests.RequestException as e:
-                logger.error(f"网络请求异常: {str(e)}")
-            except cv2.error as e:
-                logger.critical(f"OpenCV错误: {str(e)}")
+            resp = requests.get(
+                f"{login_url}?page=1&limit=10"
+                f"&idCardSign={idCardSign}&orderByField=verifyTime&isAsc=false",
+                headers=headers
+            ).json()
+            records = resp.get('data', {}).get('records', [])
+            if not records:
                 break
+            all_records.extend(records)
+        except Exception as e:
+            logger.error(f"获取数据失败: {e}")
+            break
+    return all_records
 
-            # 指数退避重试
-            delay = CONFIG["retry"]["initial_delay"] * (CONFIG["retry"]["backoff_factor"] ** (attempt-1))
-            logger.warning(f"{delay:.1f}秒后重试...")
-            time.sleep(delay)
-            attempt += 1
-            
-        logger.error("超过最大重试次数")
-        return None
+def check_new_records(access_token):
+    """检查新记录并发送通知"""
+    existing_ids = load_existing_ids()
+    current_ids = set()
+    new_records = []
+    
+    for record in fetch_all_records(access_token):
+        record_id = record.get('id')
+        if not record_id:
+            continue
+        current_ids.add(record_id)
+        if record_id not in existing_ids:
+            new_records.append(record)
+    
+    if new_records:
+        messages = []
+        for r in new_records:
+            timestamp = r['verifyTime']/1000
+            messages.append(
+                f"**新考勤记录**\n"
+                f"> 姓名：{r.get('name', '未知')}\n"
+                f"> 工种：{r.get('jobName', '未知')}\n"
+                f"> 时间：{datetime.fromtimestamp(timestamp):%Y-%m-%d %H:%M:%S}\n"
+                f"> 状态：{'进入' if r.get('inOrOut') == 'in' else '离开'}"
+            )
+        
+        send_result = send_wexinqq_md("\n\n".join(messages))
+        if send_result.get('errcode') == 0:
+            save_new_ids(existing_ids.union(current_ids))
+            return True
+        logger.error(f"消息发送失败: {send_result}")
+    return False
 
-    def _get_captcha_data(self) -> Optional[Dict]:
-        """获取验证码数据"""
-        client_uuid = CaptchaHandler.generate_uuid()
+# ================== Token获取主流程 ==================
+def refresh_token():
+    """刷新Token主流程"""
+    for attempt in range(1, max_attempts+1):
+        logger.info(f"Token获取尝试第{attempt}次")
+        session = requests.Session()
         try:
-            resp = self.session.post(
-                f"{CONFIG['base_url']}/code/create",
+            # 验证码获取
+            clientUUID = generate_client_uuid()
+            captcha_resp = session.post(
+                f"{BASE_url}/code/create",
                 json={
                     "captchaType": "blockPuzzle",
-                    "clientUid": client_uuid,
-                    "ts": int(time.time() * 1000)
-                },
-                timeout=CONFIG["api_timeout"]
+                    "clientUid": clientUUID,
+                    "ts": int(time.time()*1000)
+                }
+            ).json()
+            
+            # 图像识别
+            pos = getImgPos(
+                captcha_resp['data']['repData']['originalImageBase64'],
+                captcha_resp['data']['repData']['jigsawImageBase64']
             )
-            resp.raise_for_status()
+            encrypted_pos = aes_encrypt(
+                f'{{"x":{pos},"y":5}}',
+                captcha_resp['data']['repData']['secretKey']
+            )
             
-            data = resp.json()["data"]["repData"]
-            logger.info(f"验证码数据:{data}")
-            return {
-                "client_uuid": client_uuid,
-                "secret_key": data["secretKey"],
-                "token": data["token"],
-                "bg_img": data["originalImageBase64"],
-                "tp_img": data["jigsawImageBase64"]
-            }
+            # 验证码校验
+            check_resp = session.post(
+                f"{BASE_url}/code/check",
+                json={
+                    "captchaType": "blockPuzzle",
+                    "clientUid": clientUUID,
+                    "pointJson": encrypted_pos,
+                    "token": captcha_resp['data']['repData']['token'],
+                    "ts": int(time.time()*1000)
+                }
+            ).json()
             
-        except (KeyError, requests.RequestException) as e:
-            logger.error(f"获取验证码失败: {str(e)}")
-            return None
-
-    def _verify_captcha(self, data: Dict) -> bool:
-        """验证验证码"""
-        for _ in range(CONFIG["retry"]["max_attempts"]):
-            position = self.captcha_handler.analyze_position(data["bg_img"], data["tp_img"])
-            if position is None:
-                continue
-                
-            calibrated_pos = position * (CONFIG["captcha"]["base_width"] / 400)
-            pos_json = json.dumps({"x": calibrated_pos, "y": 5})
-            
-            try:
-                resp = self.session.post(
-                    f"{CONFIG['base_url']}/code/check",
-                    json={
-                        "captchaType": "blockPuzzle",
-                        "clientUid": data["client_uuid"],
-                        "pointJson": CryptoUtils.aes_encrypt(pos_json, data["secret_key"]),
-                        "token": data["token"],
-                        "ts": int(time.time() * 1000)
-                    },
-                    timeout=CONFIG["api_timeout"]
-                )
-                
-                if resp.status_code == 412:
-                    logger.warning("验证码不匹配")
-                    continue
-                    
-                resp.raise_for_status()
-                return resp.json().get("msg") == "执行成功"
-                
-            except requests.HTTPError as e:
-                logger.error(f"验证请求失败: {e.response.text}")
-                
-        return False
-
-    def _request_token(self, data: Dict) -> Optional[str]:
-        """请求访问令牌"""
-        try:
-            auth_payload = f"{data['token']}---{json.dumps({'x': 0, 'y': 5})}"
-            encrypted_code = CryptoUtils.aes_encrypt(auth_payload, data["secret_key"])
-            
-            self.session.headers.update(CONFIG["auth_headers"])
-            resp = self.session.post(
-                f"{CONFIG['base_url']}/auth/custom/token",
+            # Token获取
+            token_resp = session.post(
+                f"{BASE_url}/auth/custom/token",
                 params={
-                    "username": CONFIG["credentials"]["username"],
+                    "username": "13487283013",
                     "grant_type": "password",
                     "scope": "server",
-                    "code": encrypted_code,
+                    "code": aes_encrypt(
+                        f"{captcha_resp['data']['repData']['token']}---{{'x':{pos},'y':5}}",
+                        captcha_resp['data']['repData']['secretKey']
+                    ),
                     "randomStr": "blockPuzzle"
                 },
-                json={
-                    "sskjPassword": CONFIG["credentials"]["sskj_secret"]
-                },
-                timeout=CONFIG["api_timeout"]
-            )
-            resp.raise_for_status()
+                json={"sskjPassword": "2giTy1DTppbddyVBc0F6gMdSpT583XjDyJJxME2ocJ4="}
+            ).json()
             
-            token_data = resp.json()
-            access_token = token_data["access_token"]
-            self._save_token(access_token)
-            return access_token
-            
-        except (KeyError, requests.RequestException) as e:
-            logger.error(f"令牌请求失败: {str(e)}")
-            return None
+            if 'access_token' in token_resp:
+                save_token(token_resp['access_token'], token_resp.get('expires_in', 7200))
+                return token_resp['access_token']
+        except Exception as e:
+            logger.error(f"尝试{attempt}失败: {str(e)}")
+            time.sleep(random.uniform(1, 5))
+    raise Exception("无法获取有效Token")
 
-    def _save_token(self, token: str):
-        """安全存储访问令牌"""
+# ================== 主循环 ==================
+def main():
+    while True:
         try:
-            with open(CONFIG["token_file"], "w") as f:
-                json.dump({
-                    "access_token": token,
-                    "timestamp": int(time.time())
-                }, f, indent=2)
-            logger.success("令牌存储成功")
-        except IOError as e:
-            logger.error(f"存储令牌失败: {str(e)}")
+            # Token有效性检查
+            token_data = load_token()
+            if not is_token_valid(token_data):
+                logger.info("Token无效或已过期，需要刷新")
+                access_token = refresh_token()
+            else:
+                access_token = token_data['access_token']
+            
+            # 数据检查
+            if check_new_records(access_token):
+                logger.success("发现新记录并成功通知")
+            else:
+                logger.info("未发现新记录")
+            
+            # 间隔5分钟
+            time.sleep(300)
+        except KeyboardInterrupt:
+            logger.info("程序已手动终止")
+            break
+        except Exception as e:
+            logger.error(f"主循环异常: {str(e)}")
+            time.sleep(60)
 
 if __name__ == "__main__":
-    try:
-        client = AuthClient()
-        if token := client.get_access_token():
-            logger.success(f"认证成功！令牌前8位: {token[:8]}...")
-        else:
-            logger.error("认证失败")
-            exit(1)
-    except Exception as e:
-        logger.critical(f"程序异常终止: {str(e)}")
-        exit(1)
+    main()
