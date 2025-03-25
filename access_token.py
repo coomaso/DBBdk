@@ -79,53 +79,56 @@ def generate_client_uuid():
            f"-{random.choice('89ab')}{''.join(random.choices('0123456789abcdef', k=3))}" \
            f"-{''.join(random.choices('0123456789abcdef', k=12))}"
 
+# 获取图片函数
 def getImgPos(bg, tp, scale_factor=400/310):
-    """计算滑块验证缺口位置"""
-    try:
-        # Base64解码
-        bg_data = base64.b64decode(bg)
-        tp_data = base64.b64decode(tp)
-        
-        # 数据有效性检查
-        if len(bg_data) == 0 or len(tp_data) == 0:
-            logger.error("空图像数据")
-            return 0
+ '''
+ bg: 背景图片
+ tp: 缺口图片
+ out:输出图片
+ '''
+ # 解码Base64字符串为字节对象
+ bg = base64.b64decode(bg)
+ tp = base64.b64decode(tp)
 
-        # 图像解码
-        bg_img = cv2.imdecode(np.frombuffer(bg_data, dtype=np.uint8), cv2.IMREAD_COLOR)
-        tp_img = cv2.imdecode(np.frombuffer(tp_data, dtype=np.uint8), cv2.IMREAD_COLOR)
-        
-        if bg_img is None:
-            logger.error("背景图解码失败")
-            return 0
-        if tp_img is None:
-            logger.error("缺口图解码失败")
-            return 0
+ # 读取背景图片和缺口图片
+ bg_img = cv2.imdecode(np.frombuffer(bg, np.uint8), cv2.IMREAD_COLOR) # 背景图片
+ tp_img = cv2.imdecode(np.frombuffer(tp, np.uint8), cv2.IMREAD_COLOR)  # 缺口图片
 
-        # 图像缩放
-        bg_img = cv2.resize(bg_img, None, fx=scale_factor, fy=scale_factor)
-        tp_img = cv2.resize(tp_img, None, fx=scale_factor, fy=scale_factor)
+ # 对图像进行缩放
+ bg_img = cv2.resize(bg_img, (0, 0), fx=scale_factor, fy=scale_factor)
+ tp_img = cv2.resize(tp_img, (0, 0), fx=scale_factor, fy=scale_factor)
 
-        # 边缘检测
-        bg_edge = cv2.Canny(bg_img, 50, 400)
-        tp_edge = cv2.Canny(tp_img, 50, 400)
+ # 识别图片边缘
+ bg_edge = cv2.Canny(bg_img, 50, 400)
+ tp_edge = cv2.Canny(tp_img, 50, 400)
 
-        # 颜色空间转换
-        bg_pic = cv2.cvtColor(bg_edge, cv2.COLOR_GRAY2RGB)
-        tp_pic = cv2.cvtColor(tp_edge, cv2.COLOR_GRAY2RGB)
+ # 转换图片格式
+ bg_pic = cv2.cvtColor(bg_edge, cv2.COLOR_GRAY2RGB)
+ tp_pic = cv2.cvtColor(tp_edge, cv2.COLOR_GRAY2RGB)
 
-        # 模板匹配
-        res = cv2.matchTemplate(bg_pic, tp_pic, cv2.TM_CCOEFF_NORMED)
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-        
-        # 计算最终位置
-        x_pos = max_loc[0] * (310 / 400) - 2.5
-        logger.success(f"计算成功，缺口位置: {x_pos}")
-        return x_pos
+ # 缺口匹配
+ res = cv2.matchTemplate(bg_pic, tp_pic, cv2.TM_CCOEFF_NORMED)
+ _, _, _, max_loc = cv2.minMaxLoc(res)  # 寻找最优匹配
 
-    except Exception as e:
-        logger.error(f"图像处理异常: {str(e)}")
-        return 0
+ # 缩放坐标
+ #scaled_max_loc = (max_loc[0] * scale_factor, max_loc[1] * scale_factor)
+
+ # 绘制方框
+ th, tw = tp_pic.shape[:2]
+ tl = max_loc  # 左上角点的坐标
+ br = (tl[0] + tw, tl[1] + th)  # 右下角点的坐标
+ cv2.rectangle(bg_img, (int(tl[0]), int(tl[1])), (int(br[0]), int(br[1])), (0, 0, 255), 2)  # 绘制矩形
+
+ # 保存至本地
+ output_path = os.path.join(os.getcwd(), "output_imageX.jpg")
+ cv2.imwrite(output_path, bg_img)
+ tp_img_path = os.path.join(os.getcwd(), "tp_imgX.jpg")
+ cv2.imwrite(tp_img_path, tp_img)
+
+ logger.info(f"缺口的X坐标: {max_loc[0]:.4f}")
+
+ # 返回缺口的X坐标
+ return max_loc[0] - 2.5
 
 # ================== 通知发送 ==================
 def send_wexinqq_md(content):
