@@ -80,17 +80,52 @@ def generate_client_uuid():
            f"-{''.join(random.choices('0123456789abcdef', k=12))}"
 
 def getImgPos(bg, tp, scale_factor=400/310):
-    """图像识别核心逻辑"""
-    bg_img = cv2.imdecode(np.frombuffer(base64.b64decode(bg), cv2.IMREAD_COLOR))
-    tp_img = cv2.imdecode(np.frombuffer(base64.b64decode(tp), cv2.IMREAD_COLOR))
-    
-    bg_img = cv2.resize(bg_img, (0,0), fx=scale_factor, fy=scale_factor)
-    tp_img = cv2.resize(tp_img, (0,0), fx=scale_factor, fy=scale_factor)
-    
-    res = cv2.matchTemplate(cv2.Canny(bg_img, 50, 400),
-                           cv2.Canny(tp_img, 50, 400),
-                           cv2.TM_CCOEFF_NORMED)
-    return cv2.minMaxLoc(res)[3][0] * (310/400) - 2.5
+    """计算滑块验证缺口位置"""
+    try:
+        # Base64解码
+        bg_data = base64.b64decode(bg)
+        tp_data = base64.b64decode(tp)
+        
+        # 数据有效性检查
+        if len(bg_data) == 0 or len(tp_data) == 0:
+            logger.error("空图像数据")
+            return 0
+
+        # 图像解码
+        bg_img = cv2.imdecode(np.frombuffer(bg_data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        tp_img = cv2.imdecode(np.frombuffer(tp_data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        
+        if bg_img is None:
+            logger.error("背景图解码失败")
+            return 0
+        if tp_img is None:
+            logger.error("缺口图解码失败")
+            return 0
+
+        # 图像缩放
+        bg_img = cv2.resize(bg_img, None, fx=scale_factor, fy=scale_factor)
+        tp_img = cv2.resize(tp_img, None, fx=scale_factor, fy=scale_factor)
+
+        # 边缘检测
+        bg_edge = cv2.Canny(bg_img, 50, 400)
+        tp_edge = cv2.Canny(tp_img, 50, 400)
+
+        # 颜色空间转换
+        bg_pic = cv2.cvtColor(bg_edge, cv2.COLOR_GRAY2RGB)
+        tp_pic = cv2.cvtColor(tp_edge, cv2.COLOR_GRAY2RGB)
+
+        # 模板匹配
+        res = cv2.matchTemplate(bg_pic, tp_pic, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        
+        # 计算最终位置
+        x_pos = max_loc[0] * (310 / 400) - 2.5
+        logger.success(f"计算成功，缺口位置: {x_pos}")
+        return x_pos
+
+    except Exception as e:
+        logger.error(f"图像处理异常: {str(e)}")
+        return 0
 
 # ================== 通知发送 ==================
 def send_wexinqq_md(content):
