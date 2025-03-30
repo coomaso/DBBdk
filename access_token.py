@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timedelta
 
 # 配置参数
-max_attempts = 1
+max_attempts = 10
 idCardSign = "MDoCAQEwEgIBATAKBggqgRzPVQFoAQoBAQMhALC5L1lSMTEQLmI33J1qUDVhRVwTyt+e+27ntIC3g2Wb"
 BASE_url = "https://zhcjsmz.sc.yichang.gov.cn"
 login_url = "https://zhcjsmz.sc.yichang.gov.cn/labor/workordereng/getEngsPageByUser"
