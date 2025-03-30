@@ -247,11 +247,26 @@ def refresh_token():
                     "ts": round(time.time() * 1000)
                 }
             )
+            # 添加响应状态码检查
+            if captcha_resp.status_code != 200:
+                raise ValueError(f"验证码请求失败，状态码: {captcha_resp.status_code}")
+            # 解析JSON响应
+            try:
+                captcha_data = captcha_resp.json()
+            except json.JSONDecodeError:
+                logger.error(f"响应内容非JSON格式: {captcha_resp.text}")
+                raise
+            
+            # 添加关键字段检查
+            if 'data' not in captcha_data or 'repData' not in captcha_data['data']:
+                logger.error(f"验证码响应结构异常: {captcha_data}")
+                raise ValueError("验证码响应数据结构异常")
+             
             # 图像识别
             pos = getImgPos(
-                captcha_resp['data']['repData']['originalImageBase64'],
-                captcha_resp['data']['repData']['jigsawImageBase64'],
-                scale_factor = 400 / 310
+                captcha_data['data']['repData']['originalImageBase64'],
+                captcha_data['data']['repData']['jigsawImageBase64'],
+                scale_factor=400/310
             )
             posStr = '{"x":' + str(pos * (310 / 400)) + ',"y":5}'
             logger.debug(f"posStr验证码接口返回: {json.dumps(posStr, indent=2)}")
