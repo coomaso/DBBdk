@@ -171,24 +171,24 @@ def save_new_ids(ids):
 
 def fetch_all_records(access_token):
     """获取所有分页数据"""
-    headers = {
-        "Authorization": f"bearer {access_token}",
-        **{k:v for k,v in headers.items() if k != "Authorization"}
-    }
+    # 使用全局 headers 的副本来避免作用域冲突
+    request_headers = headers.copy()
+    request_headers["Authorization"] = f"bearer {access_token}"
     
     all_records = []
-
+    page = 1
     while True:
         try:
             resp = requests.get(
-                f"{login_url}?page=1&limit=10"
+                f"{login_url}?page={page}&limit=10"
                 f"&idCardSign={idCardSign}&orderByField=verifyTime&isAsc=false",
-                headers=headers
+                headers=request_headers
             ).json()
             records = resp.get('data', {}).get('records', [])
             if not records:
                 break
             all_records.extend(records)
+            page += 1
         except Exception as e:
             logger.error(f"获取数据失败: {e}")
             break
