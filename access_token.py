@@ -15,16 +15,26 @@ import time
 from datetime import datetime, timedelta
 
 # 配置参数
-max_attempts = 20
+max_attempts = 1
 idCardSign = "MDoCAQEwEgIBATAKBggqgRzPVQFoAQoBAQMhALC5L1lSMTEQLmI33J1qUDVhRVwTyt+e+27ntIC3g2Wb"
 BASE_url = "https://zhcjsmz.sc.yichang.gov.cn"
 login_url = "https://zhcjsmz.sc.yichang.gov.cn/labor/workordereng/getEngsPageByUser"
 wexinqq_url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=9b81f009-c046-4812-8690-76763d6b1abd"
 
 headers = {
-    "Host": "zhcjsmz.sc.yichang.gov.cn",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.289 Safari/537.36",
-    "Authorization": "Basic cGlnOnBpZw=="
+ "Host": "zhcjsmz.sc.yichang.gov.cn",
+ "Connection": "keep-alive",
+ "sec-ch-ua": '"Not.A/Brand";v="8", "Chromium";v="114"',
+ "Accept": "*/*",
+ "Content-Type": "application/json;charset=UTF-8",
+ "sec-ch-ua-mobile": "?0",
+ "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.289 Safari/537.36",
+ "sec-ch-ua-platform": '"Windows"',
+ "Origin": "https://zhcjsmz.sc.yichang.gov.cn",
+ "Referer": "https://zhcjsmz.sc.yichang.gov.cn/login/",
+ "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,vi;q=0.7",
+ "Accept-Encoding": "gzip, deflate",
+ "Authorization": "Basic cGlnOnBpZw=="
 }
 
 # ================== Token 管理 ==================
@@ -73,62 +83,65 @@ def aes_decrypt(ciphertext, key_word):
 # ================== 验证码处理 ==================
 def generate_client_uuid():
     """生成客户端UUID"""
-    return f"slider-{''.join(random.choices('0123456789abcdef', k=8))}" \
-           f"-{''.join(random.choices('0123456789abcdef', k=4))}" \
-           f"-4{''.join(random.choices('0123456789abcdef', k=3))}" \
-           f"-{random.choice('89ab')}{''.join(random.choices('0123456789abcdef', k=3))}" \
-           f"-{''.join(random.choices('0123456789abcdef', k=12))}"
+    s = []
+    hex_digits = "0123456789abcdef"
+    for i in range(36):
+     s.append(hex_digits[random.randint(0, 15)])
+    s[14] = "4"  # time_hi_and_version字段的12-15位设置为0010
+    s[19] = hex_digits[(int(s[19], 16) & 0x3) | 0x8]  # clock_seq_hi_and_reserved字段的6-7位设置为01
+    s[8] = s[13] = s[18] = s[23] = "-"
+    return 'slider-' + ''.join(s)
 
 # 获取图片函数
-def getImgPos(bg, tp, scale_factor=400/310):
- '''
- bg: 背景图片
- tp: 缺口图片
- out:输出图片
- '''
- # 解码Base64字符串为字节对象
- bg = base64.b64decode(bg)
- tp = base64.b64decode(tp)
-
- # 读取背景图片和缺口图片
- bg_img = cv2.imdecode(np.frombuffer(bg, np.uint8), cv2.IMREAD_COLOR) # 背景图片
- tp_img = cv2.imdecode(np.frombuffer(tp, np.uint8), cv2.IMREAD_COLOR)  # 缺口图片
-
- # 对图像进行缩放
- bg_img = cv2.resize(bg_img, (0, 0), fx=scale_factor, fy=scale_factor)
- tp_img = cv2.resize(tp_img, (0, 0), fx=scale_factor, fy=scale_factor)
-
- # 识别图片边缘
- bg_edge = cv2.Canny(bg_img, 50, 400)
- tp_edge = cv2.Canny(tp_img, 50, 400)
-
- # 转换图片格式
- bg_pic = cv2.cvtColor(bg_edge, cv2.COLOR_GRAY2RGB)
- tp_pic = cv2.cvtColor(tp_edge, cv2.COLOR_GRAY2RGB)
-
- # 缺口匹配
- res = cv2.matchTemplate(bg_pic, tp_pic, cv2.TM_CCOEFF_NORMED)
- _, _, _, max_loc = cv2.minMaxLoc(res)  # 寻找最优匹配
-
- # 缩放坐标
- #scaled_max_loc = (max_loc[0] * scale_factor, max_loc[1] * scale_factor)
-
- # 绘制方框
- th, tw = tp_pic.shape[:2]
- tl = max_loc  # 左上角点的坐标
- br = (tl[0] + tw, tl[1] + th)  # 右下角点的坐标
- cv2.rectangle(bg_img, (int(tl[0]), int(tl[1])), (int(br[0]), int(br[1])), (0, 0, 255), 2)  # 绘制矩形
-
- # 保存至本地
- output_path = os.path.join(os.getcwd(), "output_imageX.jpg")
- cv2.imwrite(output_path, bg_img)
- tp_img_path = os.path.join(os.getcwd(), "tp_imgX.jpg")
- cv2.imwrite(tp_img_path, tp_img)
-
- logger.info(f"缺口的X坐标: {max_loc[0]:.4f}")
-
- # 返回缺口的X坐标
- return max_loc[0] - 2.5
+def getImgPos(bg, tp, scale_factor):
+    '''
+    bg: 背景图片
+    tp: 缺口图片
+    out:输出图片
+    '''
+    # 解码Base64字符串为字节对象
+    bg = base64.b64decode(bg)
+    tp = base64.b64decode(tp)
+    
+    # 读取背景图片和缺口图片
+    bg_img = cv2.imdecode(np.frombuffer(bg, np.uint8), cv2.IMREAD_COLOR) # 背景图片
+    tp_img = cv2.imdecode(np.frombuffer(tp, np.uint8), cv2.IMREAD_COLOR)  # 缺口图片
+    
+    # 对图像进行缩放
+    bg_img = cv2.resize(bg_img, (0, 0), fx=scale_factor, fy=scale_factor)
+    tp_img = cv2.resize(tp_img, (0, 0), fx=scale_factor, fy=scale_factor)
+    
+    # 识别图片边缘
+    bg_edge = cv2.Canny(bg_img, 50, 400)
+    tp_edge = cv2.Canny(tp_img, 50, 400)
+    
+    # 转换图片格式
+    bg_pic = cv2.cvtColor(bg_edge, cv2.COLOR_GRAY2RGB)
+    tp_pic = cv2.cvtColor(tp_edge, cv2.COLOR_GRAY2RGB)
+    
+    # 缺口匹配
+    res = cv2.matchTemplate(bg_pic, tp_pic, cv2.TM_CCOEFF_NORMED)
+    _, _, _, max_loc = cv2.minMaxLoc(res)  # 寻找最优匹配
+    
+    # 缩放坐标
+    #scaled_max_loc = (max_loc[0] * scale_factor, max_loc[1] * scale_factor)
+    
+    # 绘制方框
+    th, tw = tp_pic.shape[:2]
+    tl = max_loc  # 左上角点的坐标
+    br = (tl[0] + tw, tl[1] + th)  # 右下角点的坐标
+    cv2.rectangle(bg_img, (int(tl[0]), int(tl[1])), (int(br[0]), int(br[1])), (0, 0, 255), 2)  # 绘制矩形
+    
+    # 保存至本地
+    output_path = os.path.join(os.getcwd(), "output_imageX.jpg")
+    cv2.imwrite(output_path, bg_img)
+    tp_img_path = os.path.join(os.getcwd(), "tp_imgX.jpg")
+    cv2.imwrite(tp_img_path, tp_img)
+    
+    logger.info(f"缺口的X坐标: {max_loc[0]:.4f}")
+    
+    # 返回缺口的X坐标
+    return max_loc[0] - 2.5
 
 # ================== 通知发送 ==================
 def send_wexinqq_md(content):
@@ -216,31 +229,41 @@ def refresh_token():
     for attempt in range(1, max_attempts+1):
         logger.info(f"Token获取尝试第{attempt}次")
         session = requests.Session()
+        logger.debug(f"请求session: {session}")
         try:
             # 验证码获取
             clientUUID = generate_client_uuid()
+            logger.info(f"clientUUID：{clientUUID}")
             captcha_resp = session.post(
                 f"{BASE_url}/code/create",
+                headers=headers,
                 json={
                     "captchaType": "blockPuzzle",
                     "clientUid": clientUUID,
-                    "ts": int(time.time()*1000)
+                    "ts": round(time.time() * 1000)
                 }
-            ).json()
-            
+            )
+            captcha_resp.raise_for_status()
+            captcha_data = captcha_resp.json()
+            logger.debug(f"验证码接口返回: {json.dumps(captcha_data, indent=2)}")
+            # 添加关键字段检查
+            if 'data' not in captcha_data or 'repData' not in captcha_data['data']:
+                raise ValueError("验证码响应数据结构异常")
             # 图像识别
             pos = getImgPos(
                 captcha_resp['data']['repData']['originalImageBase64'],
-                captcha_resp['data']['repData']['jigsawImageBase64']
+                captcha_resp['data']['repData']['jigsawImageBase64'],
+                scale_factor = 400 / 310
             )
             encrypted_pos = aes_encrypt(
                 f'{{"x":{pos},"y":5}}',
                 captcha_resp['data']['repData']['secretKey']
             )
-            
+            logger.info(f"encrypted_pos：{encrypted_pos}")
             # 验证码校验
             check_resp = session.post(
                 f"{BASE_url}/code/check",
+                headers=headers,
                 json={
                     "captchaType": "blockPuzzle",
                     "clientUid": clientUUID,
@@ -249,10 +272,11 @@ def refresh_token():
                     "ts": int(time.time()*1000)
                 }
             ).json()
-            
+            logger.debug(f"验证码校验响应: {check_resp}")
             # Token获取
             token_resp = session.post(
                 f"{BASE_url}/auth/custom/token",
+                headers=headers,
                 params={
                     "username": "13487283013",
                     "grant_type": "password",
@@ -265,6 +289,7 @@ def refresh_token():
                 },
                 json={"sskjPassword": "2giTy1DTppbddyVBc0F6gMdSpT583XjDyJJxME2ocJ4="}
             ).json()
+            logger.debug(f"获取 Token 响应: {token_resp}")
             
             if 'access_token' in token_resp:
                 save_token(token_resp['access_token'], token_resp.get('expires_in', 7200))
