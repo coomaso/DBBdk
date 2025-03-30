@@ -233,11 +233,9 @@ def refresh_token():
     for attempt in range(1, max_attempts+1):
         logger.info(f"Token获取尝试第{attempt}次")
         session = requests.Session()
-        logger.debug(f"请求session: {session}")
         try:
-            # 验证码获取
-            clientUUID = generate_client_uuid()
-            logger.info(f"clientUUID：{clientUUID}")
+            # ========== 验证码请求 ==========
+            clientUUID = generate_client_uuid() # 生成标准UUID
             captcha_resp = session.post(
                 f"{BASE_url}/code/create",
                 headers=headers,
@@ -245,37 +243,42 @@ def refresh_token():
                     "captchaType": "blockPuzzle",
                     "clientUid": clientUUID,
                     "ts": round(time.time() * 1000)
-                }
+                },
+                timeout=15
             )
-            # 添加响应状态码检查
+            
+            # 响应状态码检查
             if captcha_resp.status_code != 200:
                 raise ValueError(f"验证码请求失败，状态码: {captcha_resp.status_code}")
-            # 解析JSON响应
+            
+            # 解析JSON
             try:
                 captcha_data = captcha_resp.json()
             except json.JSONDecodeError:
-                logger.error(f"响应内容非JSON格式: {captcha_resp.text}")
-                raise
-            
-            # 添加关键字段检查
-            if 'data' not in captcha_data or 'repData' not in captcha_data['data']:
+                logger.error(f"响应内容非JSON: {captcha_resp.text}")
+                continue
+
+            # 关键字段检查
+            if not captcha_data.get('data', {}).get('repData'):
                 logger.error(f"验证码响应结构异常: {captcha_data}")
-                raise ValueError("验证码响应数据结构异常")
-             
-            # 图像识别
+                continue
+
+            # ========== 验证码识别 ==========
+            # 获取原始坐标（无需缩放计算）
             pos = getImgPos(
                 captcha_data['data']['repData']['originalImageBase64'],
                 captcha_data['data']['repData']['jigsawImageBase64'],
-                scale_factor=400/310
+                scale_factor=1.0
             )
-            posStr = '{"x":' + str(pos * (310 / 400)) + ',"y":5}'
-            logger.debug(f"posStr验证码接口返回: {json.dumps(posStr, indent=2)}")
+            posStr = f'{{"x":{pos},"y":5}}'  # 直接使用原始坐标
+            
+            # ========== 加密参数生成 ==========
             encrypted_pos = aes_encrypt(
                 posStr,
-                captcha_data['data']['repData']['secretKey']
+                captcha_data['data']['repData']['secretKey']  # 关键修正
             )
-            logger.info(f"encrypted_pos：{encrypted_pos}")
-            # 验证码校验
+            
+            # ========== 验证码校验 ==========
             check_resp = session.post(
                 f"{BASE_url}/code/check",
                 headers=headers,
@@ -283,12 +286,22 @@ def refresh_token():
                     "captchaType": "blockPuzzle",
                     "clientUid": clientUUID,
                     "pointJson": encrypted_pos,
-                    "token": captcha_resp['data']['repData']['token'],
+                    "token": captcha_data['data']['repData']['token'],  # 关键修正
                     "ts": int(time.time()*1000)
-                }
-            ).json()
-            logger.debug(f"验证码校验响应: {check_resp}")
-            # Token获取
+                },
+                timeout=15
+            )
+            
+            # 校验结果检查
+            try:
+                check_data = check_resp.json()
+                if check_data.get('code') != 200:  # 根据实际接口返回调整
+                    raise ValueError(f"验证失败: {check_data}")
+            except json.JSONDecodeError:
+                logger.error(f"校验响应非JSON: {check_resp.text}")
+                continue
+
+            # ========== Token请求 ==========
             token_resp = session.post(
                 f"{BASE_url}/auth/custom/token",
                 headers=headers,
@@ -297,22 +310,34 @@ def refresh_token():
                     "grant_type": "password",
                     "scope": "server",
                     "code": aes_encrypt(
-                        f"{captcha_data['data']['repData']['token']}---{{'x':{pos},'y':5}}",
-                        captcha_data['data']['repData']['secretKey']
+                        f"{captcha_data['data']['repData']['token']}---{{'x':{pos},'y':5}}",  # 关键修正
+                        captcha_data['data']['repData']['secretKey']  # 关键修正
                     ),
                     "randomStr": "blockPuzzle"
                 },
-                json={"sskjPassword": "2giTy1DTppbddyVBc0F6gMdSpT583XjDyJJxME2ocJ4="}
-            ).json()
-            logger.debug(f"获取 Token 响应: {token_resp}")
+                json={"sskjPassword": "2giTy1DTppbddyVBc0F6gMdSpT583XjDyJJxME2ocJ4="},
+                timeout=15
+            )
             
-            if 'access_token' in token_resp:
-                save_token(token_resp['access_token'], token_resp.get('expires_in', 7200))
-                return token_resp['access_token']
+            # Token结果处理
+            try:
+                token_data = token_resp.json()
+                if 'access_token' in token_data:
+                    save_token(token_data['access_token'], token_data.get('expires_in', 7200))
+                    return token_data['access_token']
+                else:
+                    logger.error(f"Token获取失败: {token_data}")
+            except json.JSONDecodeError:
+                logger.error(f"Token响应非JSON: {token_resp.text}")
+            
         except Exception as e:
-            logger.error(f"尝试{attempt}失败: {str(e)}")
+            logger.error(f"尝试{attempt}失败详情:")
+            logger.error(f"错误类型: {type(e).__name__}")
+            logger.error(f"错误信息: {str(e)}")
             time.sleep(random.uniform(1, 5))
+    
     raise Exception("无法获取有效Token")
+
 
 # ================== 主循环 ==================
 def main():
