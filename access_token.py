@@ -249,7 +249,7 @@ def refresh_token():
             )
             captcha_resp.raise_for_status()
             captcha_data = captcha_resp.json()
-            logger.debug(f"验证码接口返回: {json.dumps(captcha_data, indent=2)}")
+
             # 添加关键字段检查
             if 'data' not in captcha_data or 'repData' not in captcha_data['data']:
                 raise ValueError("验证码响应数据结构异常")
@@ -259,8 +259,10 @@ def refresh_token():
                 captcha_resp['data']['repData']['jigsawImageBase64'],
                 scale_factor = 400 / 310
             )
+            posStr = '{"x":' + str(pos * (310 / 400)) + ',"y":5}'
+            logger.debug(f"posStr验证码接口返回: {json.dumps(posStr, indent=2)}")
             encrypted_pos = aes_encrypt(
-                f'{{"x":{pos},"y":5}}',
+                posStr,
                 captcha_resp['data']['repData']['secretKey']
             )
             logger.info(f"encrypted_pos：{encrypted_pos}")
