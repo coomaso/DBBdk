@@ -71,14 +71,18 @@ def is_token_valid(token_data):
 
 # ================== 加解密函数 ==================
 def aes_encrypt(word, key_word):
-    key = bytes(key_word, 'utf-8')
-    cipher = AES.new(key, AES.MODE_ECB)
-    return base64.b64encode(cipher.encrypt(pad(word.encode(), AES.block_size))).decode()
+ key = bytes(key_word, 'utf-8')
+ srcs = bytes(word, 'utf-8')
+ cipher = AES.new(key, AES.MODE_ECB)
+ encrypted = cipher.encrypt(pad(srcs, AES.block_size))
+ return base64.b64encode(encrypted).decode('utf-8')
 
 def aes_decrypt(ciphertext, key_word):
-    key = bytes(key_word, 'utf-8')
-    cipher = AES.new(key, AES.MODE_ECB)
-    return unpad(cipher.decrypt(base64.b64decode(ciphertext)), AES.block_size).decode()
+ key = bytes(key_word, 'utf-8')
+ ciphertext = base64.b64decode(ciphertext)
+ cipher = AES.new(key, AES.MODE_ECB)
+ decrypted = unpad(cipher.decrypt(ciphertext), AES.block_size)
+ return decrypted.decode('utf-8')
 
 # ================== 验证码处理 ==================
 def generate_client_uuid():
@@ -94,54 +98,54 @@ def generate_client_uuid():
 
 # 获取图片函数
 def getImgPos(bg, tp, scale_factor):
-    '''
-    bg: 背景图片
-    tp: 缺口图片
-    out:输出图片
-    '''
-    # 解码Base64字符串为字节对象
-    bg = base64.b64decode(bg)
-    tp = base64.b64decode(tp)
-    
-    # 读取背景图片和缺口图片
-    bg_img = cv2.imdecode(np.frombuffer(bg, np.uint8), cv2.IMREAD_COLOR) # 背景图片
-    tp_img = cv2.imdecode(np.frombuffer(tp, np.uint8), cv2.IMREAD_COLOR)  # 缺口图片
-    
-    # 对图像进行缩放
-    bg_img = cv2.resize(bg_img, (0, 0), fx=scale_factor, fy=scale_factor)
-    tp_img = cv2.resize(tp_img, (0, 0), fx=scale_factor, fy=scale_factor)
-    
-    # 识别图片边缘
-    bg_edge = cv2.Canny(bg_img, 50, 400)
-    tp_edge = cv2.Canny(tp_img, 50, 400)
-    
-    # 转换图片格式
-    bg_pic = cv2.cvtColor(bg_edge, cv2.COLOR_GRAY2RGB)
-    tp_pic = cv2.cvtColor(tp_edge, cv2.COLOR_GRAY2RGB)
-    
-    # 缺口匹配
-    res = cv2.matchTemplate(bg_pic, tp_pic, cv2.TM_CCOEFF_NORMED)
-    _, _, _, max_loc = cv2.minMaxLoc(res)  # 寻找最优匹配
-    
-    # 缩放坐标
-    #scaled_max_loc = (max_loc[0] * scale_factor, max_loc[1] * scale_factor)
-    
-    # 绘制方框
-    th, tw = tp_pic.shape[:2]
-    tl = max_loc  # 左上角点的坐标
-    br = (tl[0] + tw, tl[1] + th)  # 右下角点的坐标
-    cv2.rectangle(bg_img, (int(tl[0]), int(tl[1])), (int(br[0]), int(br[1])), (0, 0, 255), 2)  # 绘制矩形
-    
-    # 保存至本地
-    output_path = os.path.join(os.getcwd(), "output_imageX.jpg")
-    cv2.imwrite(output_path, bg_img)
-    tp_img_path = os.path.join(os.getcwd(), "tp_imgX.jpg")
-    cv2.imwrite(tp_img_path, tp_img)
-    
-    logger.info(f"缺口的X坐标: {max_loc[0]:.4f}")
-    
-    # 返回缺口的X坐标
-    return max_loc[0] - 2.5
+ '''
+ bg: 背景图片
+ tp: 缺口图片
+ out:输出图片
+ '''
+ # 解码Base64字符串为字节对象
+ bg = base64.b64decode(bg)
+ tp = base64.b64decode(tp)
+
+ # 读取背景图片和缺口图片
+ bg_img = cv2.imdecode(np.frombuffer(bg, np.uint8), cv2.IMREAD_COLOR) # 背景图片
+ tp_img = cv2.imdecode(np.frombuffer(tp, np.uint8), cv2.IMREAD_COLOR)  # 缺口图片
+
+ # 对图像进行缩放
+ bg_img = cv2.resize(bg_img, (0, 0), fx=scale_factor, fy=scale_factor)
+ tp_img = cv2.resize(tp_img, (0, 0), fx=scale_factor, fy=scale_factor)
+
+ # 识别图片边缘
+ bg_edge = cv2.Canny(bg_img, 50, 400)
+ tp_edge = cv2.Canny(tp_img, 50, 400)
+
+ # 转换图片格式
+ bg_pic = cv2.cvtColor(bg_edge, cv2.COLOR_GRAY2RGB)
+ tp_pic = cv2.cvtColor(tp_edge, cv2.COLOR_GRAY2RGB)
+
+ # 缺口匹配
+ res = cv2.matchTemplate(bg_pic, tp_pic, cv2.TM_CCOEFF_NORMED)
+ _, _, _, max_loc = cv2.minMaxLoc(res)  # 寻找最优匹配
+
+ # 缩放坐标
+ #scaled_max_loc = (max_loc[0] * scale_factor, max_loc[1] * scale_factor)
+
+ # 绘制方框
+ th, tw = tp_pic.shape[:2]
+ tl = max_loc  # 左上角点的坐标
+ br = (tl[0] + tw, tl[1] + th)  # 右下角点的坐标
+ cv2.rectangle(bg_img, (int(tl[0]), int(tl[1])), (int(br[0]), int(br[1])), (0, 0, 255), 2)  # 绘制矩形
+
+ # 保存至本地
+ output_path = os.path.join(os.getcwd(), "output_imageX.jpg")
+ cv2.imwrite(output_path, bg_img)
+ tp_img_path = os.path.join(os.getcwd(), "tp_imgX.jpg")
+ cv2.imwrite(tp_img_path, tp_img)
+
+ logger.info(f"缺口的X坐标: {max_loc[0]:.4f}")
+
+ # 返回缺口的X坐标
+ return max_loc[0] - 2.5
 
 # ================== 通知发送 ==================
 def send_wexinqq_md(content):
