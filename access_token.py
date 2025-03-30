@@ -229,13 +229,12 @@ def check_new_records(access_token):
 
 # ================== Token获取主流程 ==================
 def refresh_token():
-    """刷新Token主流程"""
     for attempt in range(1, max_attempts+1):
         logger.info(f"Token获取尝试第{attempt}次")
         session = requests.Session()
         try:
             # ========== 验证码请求 ==========
-            clientUUID = generate_client_uuid() # 生成标准UUID
+            clientUUID = generate_client_uuid() 
             captcha_resp = session.post(
                 f"{BASE_url}/code/create",
                 headers=headers,
@@ -247,16 +246,15 @@ def refresh_token():
                 timeout=15
             )
             
-            # 响应状态码检查
-            if check_data.get('code') != 0 or not check_data.get('data', {}).get('repData', {}).get('result'):
-                logger.error(f"验证失败: {check_data}")
-                raise ValueError("验证码校验未通过")
+            # 响应状态码检查（移除错误的check_data判断）
+            if captcha_resp.status_code != 200:
+                raise ValueError(f"验证码请求失败，状态码: {captcha_resp.status_code}")
             
             # 解析JSON
             try:
                 captcha_data = captcha_resp.json()
             except json.JSONDecodeError:
-                logger.error(f"响应内容非JSON: {captcha_resp.text}")
+                logger.error(f"验证码响应非JSON: {captcha_resp.text}")
                 continue
 
             # 关键字段检查
@@ -276,7 +274,7 @@ def refresh_token():
             # ========== 加密参数生成 ==========
             encrypted_pos = aes_encrypt(
                 posStr,
-                captcha_data['data']['repData']['secretKey']  # 关键修正
+                captcha_data['data']['repData']['secretKey']
             )
             
             # ========== 验证码校验 ==========
@@ -287,15 +285,17 @@ def refresh_token():
                     "captchaType": "blockPuzzle",
                     "clientUid": clientUUID,
                     "pointJson": encrypted_pos,
-                    "token": captcha_data['data']['repData']['token'],  # 关键修正
+                    "token": captcha_data['data']['repData']['token'],
                     "ts": int(time.time()*1000)
                 },
                 timeout=15
             )
-            
-            # 校验结果检查
+           # 校验结果检查（修复变量引用顺序）
             try:
                 check_data = check_resp.json()
+                logger.debug(f"验证码校验响应: {check_data}")  # 添加调试日志
+                
+                # 根据实际接口响应结构调整判断条件
                 if check_data.get('code') != 0 or not check_data.get('data', {}).get('repData', {}).get('result'):
                     logger.error(f"验证失败: {check_data}")
                     raise ValueError("验证码校验未通过")
