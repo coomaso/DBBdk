@@ -272,7 +272,7 @@ def refresh_token():
             logger.debug(f"posStr验证码接口返回: {json.dumps(posStr, indent=2)}")
             encrypted_pos = aes_encrypt(
                 posStr,
-                captcha_resp['data']['repData']['secretKey']
+                captcha_data['data']['repData']['secretKey']
             )
             logger.info(f"encrypted_pos：{encrypted_pos}")
             # 验证码校验
@@ -297,8 +297,8 @@ def refresh_token():
                     "grant_type": "password",
                     "scope": "server",
                     "code": aes_encrypt(
-                        f"{captcha_resp['data']['repData']['token']}---{{'x':{pos},'y':5}}",
-                        captcha_resp['data']['repData']['secretKey']
+                        f"{captcha_data['data']['repData']['token']}---{{'x':{pos},'y':5}}",
+                        captcha_data['data']['repData']['secretKey']
                     ),
                     "randomStr": "blockPuzzle"
                 },
