@@ -304,7 +304,8 @@ def refresh_token():
                 continue
 
             # ========== Token请求 ==========
-            code_data = aes_encrypt(f"{captcha_data['data']['repData']['token']}---{{'x':{pos},'y':5}}",captcha_data['data']['repData']['secretKey'])
+            captcha = aes_encrypt(captcha_data['data']['repData']['token'] + '---' + posStr, captcha_data['data']['repData']['secretKey'])
+
             token_resp = session.post(
                 f"{BASE_url}/auth/custom/token",
                 headers=headers,
@@ -312,7 +313,7 @@ def refresh_token():
                     "username": "13487283013",
                     "grant_type": "password",
                     "scope": "server",
-                    "code": code_data,
+                    "code": captcha,
                     "randomStr": "blockPuzzle"
                 },
                 json={"sskjPassword": "2giTy1DTppbddyVBc0F6gMdSpT583XjDyJJxME2ocJ4="},
