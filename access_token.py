@@ -248,8 +248,9 @@ def refresh_token():
             )
             
             # 响应状态码检查
-            if captcha_resp.status_code != 200:
-                raise ValueError(f"验证码请求失败，状态码: {captcha_resp.status_code}")
+            if check_data.get('code') != 0 or not check_data.get('data', {}).get('repData', {}).get('result'):
+                logger.error(f"验证失败: {check_data}")
+                raise ValueError("验证码校验未通过")
             
             # 解析JSON
             try:
@@ -295,13 +296,15 @@ def refresh_token():
             # 校验结果检查
             try:
                 check_data = check_resp.json()
-                if check_data.get('code') != 200:  # 根据实际接口返回调整
-                    raise ValueError(f"验证失败: {check_data}")
+                if check_data.get('code') != 0 or not check_data.get('data', {}).get('repData', {}).get('result'):
+                    logger.error(f"验证失败: {check_data}")
+                    raise ValueError("验证码校验未通过")
             except json.JSONDecodeError:
                 logger.error(f"校验响应非JSON: {check_resp.text}")
                 continue
 
             # ========== Token请求 ==========
+            code_data = aes_encrypt(f"{captcha_data['data']['repData']['token']}---{{'x':{pos},'y':5}}",captcha_data['data']['repData']['secretKey'])
             token_resp = session.post(
                 f"{BASE_url}/auth/custom/token",
                 headers=headers,
@@ -309,10 +312,7 @@ def refresh_token():
                     "username": "13487283013",
                     "grant_type": "password",
                     "scope": "server",
-                    "code": aes_encrypt(
-                        f"{captcha_data['data']['repData']['token']}---{{'x':{pos},'y':5}}",  # 关键修正
-                        captcha_data['data']['repData']['secretKey']  # 关键修正
-                    ),
+                    "code": code_data,
                     "randomStr": "blockPuzzle"
                 },
                 json={"sskjPassword": "2giTy1DTppbddyVBc0F6gMdSpT583XjDyJJxME2ocJ4="},
