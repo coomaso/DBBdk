@@ -247,12 +247,6 @@ def refresh_token():
                     "ts": round(time.time() * 1000)
                 }
             )
-            captcha_resp.raise_for_status()
-            captcha_data = captcha_resp.json()
-
-            # 添加关键字段检查
-            if 'data' not in captcha_data or 'repData' not in captcha_data['data']:
-                raise ValueError("验证码响应数据结构异常")
             # 图像识别
             pos = getImgPos(
                 captcha_resp['data']['repData']['originalImageBase64'],
