@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 # 配置参数
 max_attempts = 10
-idCardSign = "MDoCAQEwEgIBATAKBggqgRzPVQFoAQoBAQMhALC5L1lSMTEQLmI33J1qUDVhRVwTyt+e+27ntIC3g2Wb"
+idCardSign = "MDoCAQEwEgIBATAKBggqgRzPVQFoAQoBAQMhALC5L1lSMTEQLmI33J1qUDVhRVwTyt%2Be%2B27ntIC3g2Wb"
 BASE_url = "https://zhcjsmz.sc.yichang.gov.cn"
 login_url = "https://zhcjsmz.sc.yichang.gov.cn/laboratt/attendance/page"
 wexinqq_url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=9b81f009-c046-4812-8690-76763d6b1abd"
