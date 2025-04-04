@@ -189,11 +189,16 @@ def fetch_all_records(access_token):
                 break
 
             json_data = response.json()
-            if not isinstance(json_data, dict) or "data" not in json_data:
+
+            # 兼容处理不同结构
+            if "data" in json_data and isinstance(json_data["data"], dict):
+                records = json_data["data"].get("records", [])
+            elif "records" in json_data and isinstance(json_data["records"], list):
+                records = json_data["records"]
+            else:
                 logger.error(f"响应格式异常: {json_data}")
                 break
 
-            records = json_data.get('data', {}).get('records', [])
             if not records:
                 logger.info("没有更多记录了")
                 break
@@ -204,6 +209,7 @@ def fetch_all_records(access_token):
             logger.error(f"获取数据失败: {e}")
             break
     return all_records
+
 
 def check_new_records(access_token):
     """检查新记录并发送通知"""
