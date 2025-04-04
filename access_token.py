@@ -229,12 +229,19 @@ def check_new_records(access_token):
         messages = []
         for r in new_records:
             timestamp = r['verifyTime']/1000
+            # 将时间戳转换为UTC时间
+            utc_time = datetime.utcfromtimestamp(timestamp)
+            # 添加8小时偏移，转为北京时间
+            beijing_time = utc_time + timedelta(hours=8)
             messages.append(
-                f"**新考勤记录**\n"
-                f"> 姓名：{r.get('name', '未知')}\n"
-                f"> 工种：{r.get('jobName', '未知')}\n"
-                f"> 时间：{datetime.fromtimestamp(timestamp):%Y-%m-%d %H:%M:%S}\n"
-                f"> 状态：{'进入' if r.get('inOrOut') == 'in' else '离开'}"
+                f"### 🎉 **新考勤记录** 🎉\n"
+                f"> **项目名称**: {r.get('engName', '未知')}\n"
+                f"> **姓名**: {r.get('name', '未知')}\n"
+                f"> **工种**: {r.get('jobName', '未知')}\n"
+                f"> **时间**: {beijing_time.strftime('%Y-%m-%d %H:%M:%S')} (北京时间)\n"
+                f"> **状态**: {'进入' if r.get('inOrOut') == 'in' else '离开'}\n"
+                f"---\n"
+                f"🔔 **备注**: 请注意查看是否需要进一步处理。"
             )
         
         send_result = send_wexinqq_md("\n\n".join(messages))
