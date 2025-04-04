@@ -262,7 +262,7 @@ def refresh_token():
             try:
                 captcha_data = captcha_resp.json()
             except json.JSONDecodeError as e:
-                logger.error(f"验证码响应非JSON: {captcha_resp.text}", 错误信息: {str(e)}")
+                logger.error(f"验证码响应非JSON: {captcha_resp.text}, 错误信息: {str(e)}")
                 raise ValueError("API 返回的不是有效的 JSON 数据")
                 continue
 
