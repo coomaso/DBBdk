@@ -234,16 +234,13 @@ def check_new_records(access_token):
             # 添加8小时偏移，转为北京时间
             beijing_time = utc_time + timedelta(hours=8)
             messages.append(
-                f"### 🎉 **新考勤记录** 🎉\n"
+                f"## 🎉 **新考勤记录** 🎉\n"
                 f"> **项目名称**: {r.get('engName', '未知')}\n"
                 f"> **姓名**: {r.get('name', '未知')}\n"
-                f"> **工种**: {r.get('jobName', '未知')}\n"
-                f"> **时间**: {beijing_time.strftime('%Y-%m-%d %H:%M:%S')} (北京时间)\n"
-                f"> **状态**: {'进入' if r.get('inOrOut') == 'in' else '离开'}\n"
-                f"---\n"
-                f"🔔 **备注**: 请注意查看是否需要进一步处理。"
+                f"> **岗位**: {r.get('jobName', '未知')}\n"
+                f"> **时间**: <font color=\"info\">{beijing_time.strftime('%Y-%m-%d %H:%M:%S')}</font> (北京时间)\n"
+                f"> **状态**: <font color=\"warning\">{'进入' if r.get('inOrOut') == 'in' else '离开'}</font>\n"
             )
-        
         send_result = send_wexinqq_md("\n\n".join(messages))
         if send_result.get('errcode') == 0:
             save_new_ids(existing_ids.union(current_ids))
