@@ -2,7 +2,7 @@ name: Python application
 
 on:
   schedule:
-    - cron: "2 * * * *"  # 每小时执行一次
+    - cron: "*/2 * * * *"  # 每小时执行一次
   push:
     branches: [ "main" ]  # 仅在推送到 main 分支时执行
 
@@ -41,8 +41,8 @@ jobs:
         # 检查 token.json 和 ids.json 是否有更改
         git add token.json ids.json
 
-        # 提交更改
-        git commit -m "Update token.json and ids.json"
+        # 提交更改，如果没有更改则跳过
+        git commit -m "Update token.json and ids.json" || echo "No changes to commit"
 
         # 推送到远程仓库
         git push origin main
