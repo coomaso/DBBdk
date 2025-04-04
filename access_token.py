@@ -178,16 +178,17 @@ def fetch_all_records(access_token):
     page = 1
     while True:
         try:
-            resp = requests.get(
+            response = requests.get(
                 f"{login_url}?page={page}&limit=10&idCardSign={idCardSign}",
                 headers=request_headers
-            ).json()
-            logger.info(f"请求状态码: {resp.status_code}")
-            if resp.status_code != 200:
-                logger.error(f"请求失败: {resp.text}")
+            )
+
+            logger.info(f"请求状态码: {response.status_code}")
+            if response.status_code != 200:
+                logger.error(f"请求失败: {response.text}")
                 break
 
-            json_data = resp.json()
+            json_data = response.json()
             if not isinstance(json_data, dict) or "data" not in json_data:
                 logger.error(f"响应格式异常: {json_data}")
                 break
@@ -203,7 +204,6 @@ def fetch_all_records(access_token):
             logger.error(f"获取数据失败: {e}")
             break
     return all_records
-
 
 def check_new_records(access_token):
     """检查新记录并发送通知"""
