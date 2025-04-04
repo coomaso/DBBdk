@@ -67,7 +67,7 @@ def is_token_valid(token_data):
     current_time = time.time()
     # Token有效期剩余至少5分钟 且 未超过12小时
     return (token_data['expiry_time'] > current_time + 300) and \
-           (current_time - token_data['obtained_time'] < 12 * 3600)
+           (current_time - token_data['obtained_time'] < 6 * 3600)
 
 # ================== 加解密函数 ==================
 def aes_encrypt(word, key_word):
@@ -381,30 +381,28 @@ def refresh_token():
 
 # ================== 主循环 ==================
 def main():
-    while True:
-        try:
-            # Token有效性检查
-            token_data = load_token()
-            if not is_token_valid(token_data):
-                logger.info("Token无效或已过期，需要刷新")
-                access_token = refresh_token()
-            else:
-                access_token = token_data['access_token']
-            
-            # 数据检查
-            if check_new_records(access_token):
-                logger.success("发现新记录并成功通知")
-            else:
-                logger.info("未发现新记录")
-            
-            # 间隔5分钟
-            time.sleep(300)
-        except KeyboardInterrupt:
-            logger.info("程序已手动终止")
-            break
-        except Exception as e:
-            logger.error(f"主循环异常: {str(e)}")
-            time.sleep(60)
+    try:
+        # Token有效性检查
+        token_data = load_token()
+        if not is_token_valid(token_data):
+            logger.info("Token无效或已过期，需要刷新")
+            access_token = refresh_token()
+        else:
+            access_token = token_data['access_token']
+        
+        # 数据检查
+        if check_new_records(access_token):
+            logger.success("发现新记录并成功通知")
+        else:
+            logger.info("未发现新记录")
+        
+        # 一次性执行后结束程序，不再循环
+        logger.info("执行完毕，程序结束")
+    
+    except KeyboardInterrupt:
+        logger.info("程序已手动终止")
+    except Exception as e:
+        logger.error(f"主循环异常: {str(e)}")
 
 if __name__ == "__main__":
     main()
