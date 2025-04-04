@@ -179,10 +179,9 @@ def fetch_all_records(access_token):
     while True:
         try:
             resp = requests.get(
-                f"{login_url}?page={page}&limit=10"
-                f"&idCardSign={idCardSign}&orderByField=verifyTime&isAsc=false",
+                f"{login_url}?page={page}&limit=10&idCardSign={idCardSign}",
                 headers=request_headers
-            )
+            ).json()
             logger.info(f"请求状态码: {resp.status_code}")
             if resp.status_code != 200:
                 logger.error(f"请求失败: {resp.text}")
