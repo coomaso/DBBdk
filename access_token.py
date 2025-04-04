@@ -185,6 +185,7 @@ def fetch_all_records(access_token):
                 headers=request_headers
             ).json()
             records = resp.get('data', {}).get('records', [])
+            logger.info(f"records获取{resp}")
             if not records:
                 break
             all_records.extend(records)
