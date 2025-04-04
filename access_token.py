@@ -267,7 +267,7 @@ def refresh_token():
                 continue
 
             # 确保 captcha_data 不是 None
-            if not response_data:
+            if not captcha_data:
                 logger.error(f"API 返回空数据，响应内容: {captcha_resp.text}")
                 raise ValueError("API 返回的数据为空")
             
