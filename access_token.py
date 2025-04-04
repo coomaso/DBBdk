@@ -171,7 +171,6 @@ def save_new_ids(ids):
 
 def fetch_all_records(access_token):
     """获取所有分页数据"""
-    # 使用全局 headers 的副本来避免作用域冲突
     request_headers = headers.copy()
     request_headers["Authorization"] = f"bearer {access_token}"
     
@@ -183,17 +182,29 @@ def fetch_all_records(access_token):
                 f"{login_url}?page={page}&limit=10"
                 f"&idCardSign={idCardSign}&orderByField=verifyTime&isAsc=false",
                 headers=request_headers
-            ).json()
-            records = resp.get('data', {}).get('records', [])
-            logger.info(f"records获取{resp}")
-            if not records:
+            )
+            logger.info(f"请求状态码: {resp.status_code}")
+            if resp.status_code != 200:
+                logger.error(f"请求失败: {resp.text}")
                 break
+
+            json_data = resp.json()
+            if not isinstance(json_data, dict) or "data" not in json_data:
+                logger.error(f"响应格式异常: {json_data}")
+                break
+
+            records = json_data.get('data', {}).get('records', [])
+            if not records:
+                logger.info("没有更多记录了")
+                break
+
             all_records.extend(records)
             page += 1
         except Exception as e:
             logger.error(f"获取数据失败: {e}")
             break
     return all_records
+
 
 def check_new_records(access_token):
     """检查新记录并发送通知"""
