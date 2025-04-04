@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 max_attempts = 10
 idCardSign = "MDoCAQEwEgIBATAKBggqgRzPVQFoAQoBAQMhALC5L1lSMTEQLmI33J1qUDVhRVwTyt+e+27ntIC3g2Wb"
 BASE_url = "https://zhcjsmz.sc.yichang.gov.cn"
-login_url = "https://zhcjsmz.sc.yichang.gov.cn/labor/workordereng/getEngsPageByUser"
+login_url = "https://zhcjsmz.sc.yichang.gov.cn/laboratt/attendance/page"
 wexinqq_url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=9b81f009-c046-4812-8690-76763d6b1abd"
 
 headers = {
@@ -179,7 +179,7 @@ def fetch_all_records(access_token):
     while True:
         try:
             response = requests.get(
-                f"{login_url}?page={page}&limit=10&idCardSign={idCardSign}",
+                f"{login_url}?page={page}&limit=10&idCardSign={idCardSign}&orderByField=verifyTime&isAsc=false",
                 headers=request_headers
             )
             logger.info(f"请求原文: {response.text}")
