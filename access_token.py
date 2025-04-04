@@ -182,7 +182,7 @@ def fetch_all_records(access_token):
                 f"{login_url}?page={page}&limit=10&idCardSign={idCardSign}",
                 headers=request_headers
             )
-
+            logger.info(f"请求原文: {response.txt}")
             logger.info(f"请求状态码: {response.status_code}")
             if response.status_code != 200:
                 logger.error(f"请求失败: {response.text}")
