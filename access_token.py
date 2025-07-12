@@ -17,12 +17,12 @@ from datetime import datetime, timedelta
 # 配置参数
 max_attempts = 10
 idCardSign = "MDoCAQEwEgIBATAKBggqgRzPVQFoAQoBAQMhALC5L1lSMTEQLmI33J1qUDVhRVwTyt%2Be%2B27ntIC3g2Wb"
-BASE_url = "https://zhcjsmz.sc.yichang.gov.cn"
-login_url = "https://zhcjsmz.sc.yichang.gov.cn/laboratt/attendance/page"
+BASE_url = "https://zhcjsmz.sanxiacloud.com"
+login_url = "https://zhcjsmz.sanxiacloud.com/laboratt/attendance/page"
 wexinqq_url = os.environ["QYWX_URL"]
 
 headers = {
- "Host": "zhcjsmz.sc.yichang.gov.cn",
+ "Host": "zhcjsmz.sanxiacloud.com",
  "Connection": "keep-alive",
  "sec-ch-ua": '"Not.A/Brand";v="8", "Chromium";v="114"',
  "Accept": "*/*",
@@ -30,8 +30,8 @@ headers = {
  "sec-ch-ua-mobile": "?0",
  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.289 Safari/537.36",
  "sec-ch-ua-platform": '"Windows"',
- "Origin": "https://zhcjsmz.sc.yichang.gov.cn",
- "Referer": "https://zhcjsmz.sc.yichang.gov.cn/login/",
+ "Origin": "https://zhcjsmz.sanxiacloud.com",
+ "Referer": "https://zhcjsmz.sanxiacloud.com/login/",
  "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,vi;q=0.7",
  "Accept-Encoding": "gzip, deflate",
  "Authorization": "Basic cGlnOnBpZw=="
@@ -253,7 +253,7 @@ def refresh_token():
     for attempt in range(1, max_attempts+1):
         logger.info(f"Token获取尝试第{attempt}次")
         session = requests.Session()
-        response = session.get("https://zhcjsmz.sc.yichang.gov.cn/login/#/login", headers=headers)
+        response = session.get("https://zhcjsmz.sanxiacloud.com/login/#/login", headers=headers)
         
         # 解析 Cookie
         cookies_dict = requests.utils.dict_from_cookiejar(session.cookies)
