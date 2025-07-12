@@ -172,7 +172,7 @@ def save_new_ids(ids):
 def fetch_all_records(access_token):
     """获取所有分页数据"""
     request_headers = headers.copy()
-    request_headers["Authorization"] = f"bearer {access_token}"
+    # request_headers["Authorization"] = f"bearer {access_token}"
     
     all_records = []
     page = 1
