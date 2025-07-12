@@ -1,4 +1,4 @@
-name: Python application
+name: DBB打卡查询程序
 
 on:
   schedule:
