@@ -381,21 +381,21 @@ def refresh_token():
 def main():
     try:
         # Token有效性检查
-        token_data = load_token()
-        if not is_token_valid(token_data):
-            logger.info("Token无效或已过期，需要刷新")
-            access_token = refresh_token()
-        else:
-            access_token = token_data['access_token']
+        # token_data = load_token()
+        # if not is_token_valid(token_data):
+        #     logger.info("Token无效或已过期，需要刷新")
+        #     access_token = refresh_token()
+        # else:
+        #     access_token = token_data['access_token']
         
         # 数据检查
-        if check_new_records(access_token):
-            logger.success("发现新记录并成功通知")
-        else:
-            logger.info("未发现新记录")
+        # if check_new_records(access_token):
+        #     logger.success("发现新记录并成功通知")
+        # else:
+        #     logger.info("未发现新记录")
         
         # 一次性执行后结束程序，不再循环
-        logger.info("执行完毕，程序结束")
+        # logger.info("执行完毕，程序结束")
     
     except KeyboardInterrupt:
         logger.info("程序已手动终止")
