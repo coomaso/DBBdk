@@ -387,7 +387,8 @@ def main():
         #     access_token = refresh_token()
         # else:
         #     access_token = token_data['access_token']
-        
+        token_data = load_token()
+        access_token = token_data['access_token']
         # 数据检查
         if check_new_records(access_token):
             logger.success("发现新记录并成功通知")
