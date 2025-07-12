@@ -172,7 +172,7 @@ def save_new_ids(ids):
 def fetch_all_records(access_token):
     """获取所有分页数据"""
     request_headers = headers.copy()
-    # request_headers["Authorization"] = f"bearer {access_token}"
+    request_headers["Authorization"] = f"bearer {access_token}"
     
     all_records = []
     page = 1
@@ -180,7 +180,7 @@ def fetch_all_records(access_token):
         try:
             response = requests.get(
                 f"{login_url}?page={page}&limit=10&idCardSign={idCardSign}&orderByField=verifyTime&isAsc=false",
-                headers=request_headers
+                # headers=request_headers
             )
             logger.info(f"请求原文: {response.text}")
             logger.info(f"请求状态码: {response.status_code}")
