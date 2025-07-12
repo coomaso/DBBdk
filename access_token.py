@@ -389,13 +389,13 @@ def main():
         #     access_token = token_data['access_token']
         
         # 数据检查
-        # if check_new_records(access_token):
-        #     logger.success("发现新记录并成功通知")
-        # else:
-        #     logger.info("未发现新记录")
+        if check_new_records(access_token):
+            logger.success("发现新记录并成功通知")
+        else:
+            logger.info("未发现新记录")
         
         # 一次性执行后结束程序，不再循环
-        # logger.info("执行完毕，程序结束")
+        logger.info("执行完毕，程序结束")
     
     except KeyboardInterrupt:
         logger.info("程序已手动终止")
