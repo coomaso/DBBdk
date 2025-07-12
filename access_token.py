@@ -242,9 +242,9 @@ def check_new_records(access_token):
                 f"> **状态**: <font color=\"warning\">{'进入' if r.get('inOrOut') == 'in' else '离开'}</font>\n"
             )
         send_result = send_wexinqq_md("\n\n".join(messages))
-        save_new_ids(existing_ids.union(current_ids))
+        # save_new_ids(existing_ids.union(current_ids))
         if send_result.get('errcode') == 0:
-            # save_new_ids(existing_ids.union(current_ids))
+            save_new_ids(existing_ids.union(current_ids))
             return True
         logger.error(f"消息发送失败: {send_result}")
     return False
