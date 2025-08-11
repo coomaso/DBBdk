@@ -1,8 +1,10 @@
 import requests
 import json
 import os
+import time
 from loguru import logger
 from datetime import datetime, timedelta
+from collections import defaultdict
 
 # 配置参数
 max_attempts = 10
@@ -11,6 +13,12 @@ names = ["代碧波", "周民锋"]
 BASE_url = "http://106.15.60.27:33333"
 login_url = "http://106.15.60.27:33333/laboratt/attendance/page"
 wexinqq_url = os.environ["QYWX_URL"]
+
+# 企业微信消息长度限制 (4096字符)
+MAX_MESSAGE_LENGTH = 4000  # 保留一些空间
+
+# 工作时长阈值 (小时)
+WORK_DURATION_THRESHOLD = 4
 
 headers = {
     "Host": "zhcjsmz.sanxiacloud.com",
@@ -32,9 +40,15 @@ headers = {
 def send_wexinqq_md(content):
     """发送Markdown消息到企业微信"""
     try:
+        # 检查内容长度
+        if len(content) > MAX_MESSAGE_LENGTH:
+            logger.warning(f"消息长度 {len(content)} 超过限制 ({MAX_MESSAGE_LENGTH})，将被截断")
+            content = content[:MAX_MESSAGE_LENGTH] + "\n\n...（内容过长被截断）"
+        
         response = requests.post(
             wexinqq_url,
-            json={'msgtype': 'markdown', 'markdown': {'content': content}}
+            json={'msgtype': 'markdown', 'markdown': {'content': content}},
+            timeout=10
         )
         result = response.json()
         if result.get('errcode') == 0:
@@ -47,14 +61,62 @@ def send_wexinqq_md(content):
         logger.error(f"发送企业微信通知时出错: {str(e)}")
         return False
 
+def send_paginated_messages(messages):
+    """分页发送消息，避免超过长度限制"""
+    if not messages:
+        return False
+    
+    # 计算每条消息的平均长度
+    total_length = sum(len(msg) for msg in messages)
+    if messages:
+        avg_length = total_length / len(messages)
+    else:
+        avg_length = 0
+    
+    # 计算每批可以包含多少条消息
+    if avg_length > 0:
+        batch_size = max(1, int(MAX_MESSAGE_LENGTH / avg_length))
+    else:
+        batch_size = 5  # 默认每批5条
+    
+    logger.info(f"平均每条消息长度: {avg_length:.0f}, 每批发送 {batch_size} 条记录")
+    
+    # 分批发送
+    all_success = True
+    for i in range(0, len(messages), batch_size):
+        batch = messages[i:i + batch_size]
+        content = "\n\n".join(batch)
+        
+        # 添加分页信息
+        total_pages = (len(messages) + batch_size - 1) // batch_size
+        current_page = i // batch_size + 1
+        page_info = f"# 📋 考勤记录通知 ({current_page}/{total_pages})\n\n"
+        
+        # 发送当前批次
+        logger.info(f"发送第 {current_page}/{total_pages} 批消息 ({len(batch)}条记录)")
+        if not send_wexinqq_md(page_info + content):
+            all_success = False
+            logger.error(f"第 {current_page} 批消息发送失败")
+        
+        # 批次间延迟
+        time.sleep(1)
+    
+    return all_success
+
 # ================== 数据监控 ==================
 def load_existing_ids():
     """加载已记录的ID集合"""
     try:
-        with open('ids.json') as f:
-            return set(json.load(f))
-    except (FileNotFoundError, json.JSONDecodeError):
-        logger.warning("未找到ids.json文件或文件格式错误，将创建新文件")
+        if os.path.exists('ids.json'):
+            with open('ids.json') as f:
+                ids = json.load(f)
+                logger.info(f"成功加载 {len(ids)} 条历史记录ID")
+                return set(ids)
+        else:
+            logger.warning("未找到ids.json文件，将创建新文件")
+            return set()
+    except json.JSONDecodeError:
+        logger.error("ids.json文件格式错误，将重新创建")
         return set()
 
 def save_new_ids(ids):
@@ -76,7 +138,7 @@ def fetch_records_for_name(name):
             url = f"{login_url}?page={page}&limit=100&name={name}&orderByField=verifyTime&isAsc=false"
             logger.debug(f"请求URL: {url}")
             
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=15)
             logger.info(f"请求 {name} 的考勤记录, 页码: {page}, 状态码: {response.status_code}")
             
             if response.status_code != 200:
@@ -84,7 +146,6 @@ def fetch_records_for_name(name):
                 break
 
             json_data = response.json()
-            logger.debug(f"响应数据: {json_data}")
 
             # 兼容处理不同结构
             if "data" in json_data and isinstance(json_data["data"], dict):
@@ -126,6 +187,66 @@ def fetch_all_records():
     all_records.sort(key=lambda x: x.get('verifyTime', 0), reverse=True)
     return all_records
 
+def analyze_work_duration(records):
+    """
+    分析工作时长，返回一个包含警告信息的字典
+    key: 记录ID
+    value: 警告消息
+    """
+    warnings = {}
+    
+    # 按姓名和日期分组记录
+    grouped_records = defaultdict(lambda: defaultdict(list))
+    
+    # 处理记录并分组
+    for record in records:
+        # 获取时间戳并转换为北京时间
+        timestamp = record.get('verifyTime', 0) / 1000
+        if not timestamp:
+            continue
+            
+        utc_time = datetime.utcfromtimestamp(timestamp)
+        beijing_time = utc_time + timedelta(hours=8)
+        record['beijing_time'] = beijing_time
+        date_key = beijing_time.date().isoformat()
+        
+        # 按姓名和日期分组
+        key = (record.get('name', '未知'), date_key)
+        grouped_records[key][record.get('inOrOut', 'unknown')].append(record)
+    
+    # 分析每个分组的工作时长
+    for (name, date), records_by_type in grouped_records.items():
+        # 获取当天所有进入记录
+        in_records = records_by_type.get('in', [])
+        # 获取当天所有离开记录
+        out_records = records_by_type.get('out', [])
+        
+        # 如果没有进入记录或离开记录，跳过
+        if not in_records or not out_records:
+            continue
+        
+        # 找到最早的进入记录
+        first_in_record = min(in_records, key=lambda x: x['beijing_time'])
+        
+        # 遍历所有离开记录
+        for out_record in out_records:
+            # 计算工作时长（小时）
+            work_duration = (out_record['beijing_time'] - first_in_record['beijing_time']).total_seconds() / 3600
+            
+            # 如果工作时长小于阈值，添加警告
+            if work_duration < WORK_DURATION_THRESHOLD:
+                warning_msg = (
+                    f"⚠️ **工作时长不足提醒** ⚠️\n"
+                    f"> **姓名**: {name}\n"
+                    f"> **日期**: {date}\n"
+                    f"> **最早进入**: {first_in_record['beijing_time'].strftime('%H:%M:%S')}\n"
+                    f"> **离开时间**: {out_record['beijing_time'].strftime('%H:%M:%S')}\n"
+                    f"> **工作时长**: {work_duration:.2f}小时 (小于{WORK_DURATION_THRESHOLD}小时)"
+                )
+                warnings[out_record['id']] = warning_msg
+    
+    return warnings
+
 def check_new_records():
     """检查新记录并发送通知"""
     try:
@@ -154,7 +275,12 @@ def check_new_records():
             # 按时间排序 (从旧到新，这样通知中先显示最早的记录)
             new_records.sort(key=lambda x: x.get('verifyTime', 0))
             
+            # 分析工作时长，获取警告信息
+            warnings = analyze_work_duration(new_records)
+            
             messages = []
+            warning_messages = []
+            
             for r in new_records:
                 timestamp = r.get('verifyTime', 0) / 1000
                 # 将时间戳转换为UTC时间
@@ -172,21 +298,47 @@ def check_new_records():
                 status_text = "进入" if status == 'in' else "离开"
                 status_color = "info" if status == 'in' else "warning"
                 
-                messages.append(
-                    f"## 🎉 **新考勤记录** 🎉\n"
+                # 创建消息
+                message = (
+                    f"## 🎉 新考勤记录\n"
                     f"> **项目名称**: {project_name}\n"
                     f"> **姓名**: {r.get('name', '未知')}\n"
                     f"> **岗位**: {r.get('jobName', '未知')}\n"
-                    f"> **时间**: <font color=\"info\">{beijing_time.strftime('%Y-%m-%d %H:%M:%S')}</font> (北京时间)\n"
+                    f"> **时间**: <font color=\"info\">{beijing_time.strftime('%Y-%m-%d %H:%M:%S')}</font>\n"
                     f"> **状态**: <font color=\"{status_color}\">{status_text}</font>\n"
                 )
+                
+                # 如果此记录有工作时长警告，添加特殊标记
+                if r['id'] in warnings:
+                    message += f"> **注意**: <font color=\"warning\">工作时长可能不足</font>\n"
+                    # 保存警告消息，稍后单独发送
+                    warning_messages.append(warnings[r['id']])
+                
+                messages.append(message)
             
-            # 添加标题和总结信息
-            content = f"# 📢 发现 {len(new_records)} 条新考勤记录\n\n" + "\n\n".join(messages)
+            # 添加总标题
+            summary = f"# 📢 发现 {len(new_records)} 条新考勤记录\n"
             
-            # 发送通知
-            if send_wexinqq_md(content):
-                # 通知发送成功后才保存ID
+            # 如果有警告，添加总结提醒
+            if warning_messages:
+                summary += f"## ⚠️ 发现 {len(warning_messages)} 条工作时长不足记录 ⚠️\n\n"
+            
+            # 分页发送考勤记录
+            send_success = send_paginated_messages([summary] + messages)
+            
+            # 单独发送警告消息
+            if warning_messages:
+                logger.warning(f"发现 {len(warning_messages)} 条工作时长不足记录")
+                warning_summary = f"# ⚠️ 工作时长不足提醒汇总 ⚠️\n共发现 {len(warning_messages)} 条工作时长不足{WORK_DURATION_THRESHOLD}小时的记录\n\n"
+                warning_content = warning_summary + "\n\n".join(warning_messages)
+                send_wexinqq_md(warning_content)
+            
+            # 发送完成消息
+            if send_success:
+                send_wexinqq_md(f"# ✅ 考勤通知已完成\n共处理 {len(new_records)} 条新记录")
+            
+            # 通知发送成功后才保存ID
+            if send_success:
                 save_new_ids(existing_ids.union(current_ids))
                 return True
             else:
@@ -198,6 +350,8 @@ def check_new_records():
             
     except Exception as e:
         logger.error(f"检查新记录时出错: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 # ================== 主循环 ==================
@@ -216,9 +370,26 @@ def main():
         logger.info("程序已手动终止")
     except Exception as e:
         logger.error(f"主循环异常: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
-    import time
-    logger.add("attendance_monitor.log", rotation="10 MB", retention="7 days")
+    # 配置日志
+    logger.add(
+        "attendance_monitor.log", 
+        rotation="10 MB", 
+        retention="7 days", 
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}",
+        level="INFO"
+    )
+    
     logger.info("======= 考勤监控程序启动 =======")
+    logger.info(f"监控人员: {', '.join(names)}")
+    logger.info(f"工作时长阈值: {WORK_DURATION_THRESHOLD}小时")
+    start_time = time.time()
+    
     main()
+    
+    duration = time.time() - start_time
+    logger.info(f"程序运行完成，耗时: {duration:.2f}秒")
+    logger.info("=" * 50)
