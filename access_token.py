@@ -15,7 +15,7 @@ login_url = "http://106.15.60.27:33333/laboratt/attendance/page"
 wexinqq_url = os.environ["QYWX_URL"]
 
 # 企业微信消息长度限制 (4096字符)
-MAX_MESSAGE_LENGTH = 4000  # 保留一些空间
+MAX_MESSAGE_LENGTH = 2000  # 保留一些空间
 
 # 工作时长阈值 (小时)
 WORK_DURATION_THRESHOLD = 4
