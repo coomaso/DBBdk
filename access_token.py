@@ -21,7 +21,7 @@ MAX_MESSAGE_LENGTH = 4000  # 保留一些空间
 WORK_DURATION_THRESHOLD = 4
 
 headers = {
-    "Host": "zhcjsmz.sanxiacloud.com",
+    # "Host": "zhcjsmz.sanxiacloud.com",
     "Connection": "keep-alive",
     "sec-ch-ua": '"Not.A/Brand";v="8", "Chromium";v="114"',
     "Accept": "*/*",
