@@ -1,159 +1,51 @@
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-import base64
 import requests
 import json
-import random
-from loguru import logger
-import cv2
-import numpy as np
 import os
-from PIL import Image
-from pathlib import Path
-import io
-import time
+from loguru import logger
 from datetime import datetime, timedelta
 
 # 配置参数
 max_attempts = 10
-idCardSign = "MDoCAQEwEgIBATAKBggqgRzPVQFoAQoBAQMhALC5L1lSMTEQLmI33J1qUDVhRVwTyt%2Be%2B27ntIC3g2Wb"
+# 支持多个人员查询
+names = ["代碧波", "周民锋"]
 BASE_url = "http://106.15.60.27:33333"
 login_url = "http://106.15.60.27:33333/laboratt/attendance/page"
 wexinqq_url = os.environ["QYWX_URL"]
 
 headers = {
- "Host": "zhcjsmz.sanxiacloud.com",
- "Connection": "keep-alive",
- "sec-ch-ua": '"Not.A/Brand";v="8", "Chromium";v="114"',
- "Accept": "*/*",
- "Content-Type": "application/json;charset=UTF-8",
- "sec-ch-ua-mobile": "?0",
- "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.289 Safari/537.36",
- "sec-ch-ua-platform": '"Windows"',
- "Origin": "http://106.15.60.27:33333",
- "Referer": "http://106.15.60.27:33333/login/",
- "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,vi;q=0.7",
- "Accept-Encoding": "gzip, deflate",
- "Authorization": "Basic cGlnOnBpZw=="
+    "Host": "zhcjsmz.sanxiacloud.com",
+    "Connection": "keep-alive",
+    "sec-ch-ua": '"Not.A/Brand";v="8", "Chromium";v="114"',
+    "Accept": "*/*",
+    "Content-Type": "application/json;charset=UTF-8",
+    "sec-ch-ua-mobile": "?0",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.289 Safari/537.36",
+    "sec-ch-ua-platform": '"Windows"',
+    "Origin": "http://106.15.60.27:33333",
+    "Referer": "http://106.15.60.27:33333/login/",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,vi;q=0.7",
+    "Accept-Encoding": "gzip, deflate",
+    "Authorization": "Basic cGlnOnBpZw=="
 }
-
-# ================== Token 管理 ==================
-def save_token(access_token, expires_in):
-    """保存Token及相关时间信息"""
-    token_data = {
-        'access_token': access_token,
-        'expiry_time': time.time() + expires_in,
-        'obtained_time': time.time()
-    }
-    with open('token.json', 'w') as f:
-        json.dump(token_data, f)
-
-def load_token():
-    """加载本地存储的Token"""
-    try:
-        with open('token.json', 'r') as f:
-            token_data = json.load(f)
-            # 验证必要字段存在
-            if all(key in token_data for key in ['access_token', 'expiry_time', 'obtained_time']):
-                return token_data
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        pass
-    return None
-
-def is_token_valid(token_data):
-    """检查Token是否有效（12小时机制）"""
-    if not token_data:
-        return False
-    current_time = time.time()
-    # Token有效期剩余至少5分钟 且 未超过12小时
-    return (token_data['expiry_time'] > current_time + 300) and \
-           (current_time - token_data['obtained_time'] < 6 * 3600)
-
-# ================== 加解密函数 ==================
-def aes_encrypt(word, key_word):
- key = bytes(key_word, 'utf-8')
- srcs = bytes(word, 'utf-8')
- cipher = AES.new(key, AES.MODE_ECB)
- encrypted = cipher.encrypt(pad(srcs, AES.block_size))
- return base64.b64encode(encrypted).decode('utf-8')
-
-def aes_decrypt(ciphertext, key_word):
- key = bytes(key_word, 'utf-8')
- ciphertext = base64.b64decode(ciphertext)
- cipher = AES.new(key, AES.MODE_ECB)
- decrypted = unpad(cipher.decrypt(ciphertext), AES.block_size)
- return decrypted.decode('utf-8')
-
-# ================== 验证码处理 ==================
-def generate_client_uuid():
-    """生成客户端UUID"""
-    s = []
-    hex_digits = "0123456789abcdef"
-    for i in range(36):
-     s.append(hex_digits[random.randint(0, 15)])
-    s[14] = "4"  # time_hi_and_version字段的12-15位设置为0010
-    s[19] = hex_digits[(int(s[19], 16) & 0x3) | 0x8]  # clock_seq_hi_and_reserved字段的6-7位设置为01
-    s[8] = s[13] = s[18] = s[23] = "-"
-    return 'slider-' + ''.join(s)
-
-# 获取图片函数
-def getImgPos(bg, tp, scale_factor):
- '''
- bg: 背景图片
- tp: 缺口图片
- out:输出图片
- '''
- # 解码Base64字符串为字节对象
- bg = base64.b64decode(bg)
- tp = base64.b64decode(tp)
-
- # 读取背景图片和缺口图片
- bg_img = cv2.imdecode(np.frombuffer(bg, np.uint8), cv2.IMREAD_COLOR) # 背景图片
- tp_img = cv2.imdecode(np.frombuffer(tp, np.uint8), cv2.IMREAD_COLOR)  # 缺口图片
-
- # 对图像进行缩放
- bg_img = cv2.resize(bg_img, (0, 0), fx=scale_factor, fy=scale_factor)
- tp_img = cv2.resize(tp_img, (0, 0), fx=scale_factor, fy=scale_factor)
-
- # 识别图片边缘
- bg_edge = cv2.Canny(bg_img, 50, 400)
- tp_edge = cv2.Canny(tp_img, 50, 400)
-
- # 转换图片格式
- bg_pic = cv2.cvtColor(bg_edge, cv2.COLOR_GRAY2RGB)
- tp_pic = cv2.cvtColor(tp_edge, cv2.COLOR_GRAY2RGB)
-
- # 缺口匹配
- res = cv2.matchTemplate(bg_pic, tp_pic, cv2.TM_CCOEFF_NORMED)
- _, _, _, max_loc = cv2.minMaxLoc(res)  # 寻找最优匹配
-
- # 缩放坐标
- #scaled_max_loc = (max_loc[0] * scale_factor, max_loc[1] * scale_factor)
-
- # 绘制方框
- th, tw = tp_pic.shape[:2]
- tl = max_loc  # 左上角点的坐标
- br = (tl[0] + tw, tl[1] + th)  # 右下角点的坐标
- cv2.rectangle(bg_img, (int(tl[0]), int(tl[1])), (int(br[0]), int(br[1])), (0, 0, 255), 2)  # 绘制矩形
-
- # 保存至本地
- output_path = os.path.join(os.getcwd(), "output_imageX.jpg")
- cv2.imwrite(output_path, bg_img)
- tp_img_path = os.path.join(os.getcwd(), "tp_imgX.jpg")
- cv2.imwrite(tp_img_path, tp_img)
-
- logger.info(f"缺口的X坐标: {max_loc[0]:.4f}")
-
- # 返回缺口的X坐标
- return max_loc[0] - 2.5
 
 # ================== 通知发送 ==================
 def send_wexinqq_md(content):
     """发送Markdown消息到企业微信"""
-    return requests.post(
-        wexinqq_url,
-        json={'msgtype': 'markdown', 'markdown': {'content': content}}
-    ).json()
+    try:
+        response = requests.post(
+            wexinqq_url,
+            json={'msgtype': 'markdown', 'markdown': {'content': content}}
+        )
+        result = response.json()
+        if result.get('errcode') == 0:
+            logger.success("企业微信通知发送成功")
+            return True
+        else:
+            logger.error(f"企业微信通知发送失败: {result}")
+            return False
+    except Exception as e:
+        logger.error(f"发送企业微信通知时出错: {str(e)}")
+        return False
 
 # ================== 数据监控 ==================
 def load_existing_ids():
@@ -162,235 +54,157 @@ def load_existing_ids():
         with open('ids.json') as f:
             return set(json.load(f))
     except (FileNotFoundError, json.JSONDecodeError):
+        logger.warning("未找到ids.json文件或文件格式错误，将创建新文件")
         return set()
 
 def save_new_ids(ids):
     """保存新的ID集合"""
-    with open('ids.json', 'w') as f:
-        json.dump(list(ids), f)
+    try:
+        with open('ids.json', 'w') as f:
+            json.dump(list(ids), f)
+        logger.info(f"成功保存{len(ids)}条记录ID到ids.json")
+    except Exception as e:
+        logger.error(f"保存ID集合失败: {str(e)}")
 
-def fetch_all_records(access_token):
-    """获取所有分页数据"""
-    request_headers = headers.copy()
-    request_headers["Authorization"] = f"bearer {access_token}"
-    
-    all_records = []
+def fetch_records_for_name(name):
+    """获取单个名字的所有分页数据"""
+    records = []
     page = 1
     while True:
         try:
-            response = requests.get(
-                f"{login_url}?page={page}&limit=10&idCardSign={idCardSign}&orderByField=verifyTime&isAsc=false",
-                # headers=request_headers
-            )
-            logger.info(f"请求原文: {response.text}")
-            logger.info(f"请求状态码: {response.status_code}")
+            # 构建查询URL
+            url = f"{login_url}?page={page}&limit=100&name={name}&orderByField=verifyTime&isAsc=false"
+            logger.debug(f"请求URL: {url}")
+            
+            response = requests.get(url, headers=headers)
+            logger.info(f"请求 {name} 的考勤记录, 页码: {page}, 状态码: {response.status_code}")
+            
             if response.status_code != 200:
                 logger.error(f"请求失败: {response.text}")
                 break
 
             json_data = response.json()
+            logger.debug(f"响应数据: {json_data}")
 
             # 兼容处理不同结构
             if "data" in json_data and isinstance(json_data["data"], dict):
-                records = json_data["data"].get("records", [])
+                page_records = json_data["data"].get("records", [])
             elif "records" in json_data and isinstance(json_data["records"], list):
-                records = json_data["records"]
+                page_records = json_data["records"]
             else:
                 logger.error(f"响应格式异常: {json_data}")
                 break
 
-            if not records:
-                logger.info("没有更多记录了")
+            if not page_records:
+                logger.info(f"名字 {name} 的第 {page} 页没有更多记录了")
                 break
 
-            all_records.extend(records)
+            records.extend(page_records)
+            logger.info(f"第 {page} 页获取到 {len(page_records)} 条记录")
             page += 1
+            
+            # 添加延迟避免请求过快
+            time.sleep(0.5)
+            
         except Exception as e:
             logger.error(f"获取数据失败: {e}")
             break
+    
+    logger.info(f"总共获取到 {len(records)} 条 {name} 的记录")
+    return records
+
+def fetch_all_records():
+    """获取所有名字的所有记录"""
+    all_records = []
+    for name in names:
+        logger.info(f"开始查询 {name} 的考勤记录")
+        records = fetch_records_for_name(name)
+        all_records.extend(records)
+        logger.success(f"查询到 {name} 的 {len(records)} 条记录")
+    
+    # 按时间排序 (从新到旧)
+    all_records.sort(key=lambda x: x.get('verifyTime', 0), reverse=True)
     return all_records
 
-
-def check_new_records(access_token):
+def check_new_records():
     """检查新记录并发送通知"""
-    existing_ids = load_existing_ids()
-    current_ids = set()
-    new_records = []
-    
-    for record in fetch_all_records(access_token):
-        record_id = record.get('id')
-        if not record_id:
-            continue
-        current_ids.add(record_id)
-        if record_id not in existing_ids:
-            new_records.append(record)
-    
-    if new_records:
-        messages = []
-        for r in new_records:
-            timestamp = r['verifyTime']/1000
-            # 将时间戳转换为UTC时间
-            utc_time = datetime.utcfromtimestamp(timestamp)
-            # 添加8小时偏移，转为北京时间
-            beijing_time = utc_time + timedelta(hours=8)
-            messages.append(
-                f"## 🎉 **新考勤记录** 🎉\n"
-                f"> **项目名称**: {r.get('engName', '未知')}\n"
-                f"> **姓名**: {r.get('name', '未知')}\n"
-                f"> **岗位**: {r.get('jobName', '未知')}\n"
-                f"> **时间**: <font color=\"info\">{beijing_time.strftime('%Y-%m-%d %H:%M:%S')}</font> (北京时间)\n"
-                f"> **状态**: <font color=\"warning\">{'进入' if r.get('inOrOut') == 'in' else '离开'}</font>\n"
-            )
-        send_result = send_wexinqq_md("\n\n".join(messages))
-        # save_new_ids(existing_ids.union(current_ids))
-        if send_result.get('errcode') == 0:
-            save_new_ids(existing_ids.union(current_ids))
-            return True
-        logger.error(f"消息发送失败: {send_result}")
-    return False
-
-# ================== Token获取主流程 ==================
-def refresh_token():
-    for attempt in range(1, max_attempts+1):
-        logger.info(f"Token获取尝试第{attempt}次")
-        session = requests.Session()
-        response = session.get("http://106.15.60.27:33333/login/#/login", headers=headers)
+    try:
+        existing_ids = load_existing_ids()
+        logger.info(f"已加载 {len(existing_ids)} 条历史记录ID")
         
-        # 解析 Cookie
-        cookies_dict = requests.utils.dict_from_cookiejar(session.cookies)
-        session.cookies.update(cookies_dict)
-     
-        try:
-            # ========== 验证码请求 ==========
-            clientUUID = generate_client_uuid() 
-            current_timestamp_milliseconds = round(time.time() * 1000)
-            data = {
-                "captchaType": "blockPuzzle",
-                "clientUid": clientUUID,
-                "ts": current_timestamp_milliseconds
-            }       
-            captcha_resp = session.post(
-                f"{BASE_url}/code/create",
-                headers=headers,
-                json=data,
-                timeout=15
-            )
-            # 先检查状态码
-            if captcha_resp.status_code != 200:
-                logger.error(f"API 请求失败，状态码: {captcha_resp.status_code}, 响应内容: {captcha_resp.text}")
-                raise ValueError("API 请求失败，请检查请求参数或服务器状态")
-
-            # 解析JSON
-            try:
-                captcha_data = captcha_resp.json()
-            except json.JSONDecodeError as e:
-                logger.error(f"验证码响应非JSON: {captcha_resp.text}, 错误信息: {str(e)}")
-                raise ValueError("API 返回的不是有效的 JSON 数据")
+        current_ids = set()
+        new_records = []
+        
+        records = fetch_all_records()
+        logger.info(f"总共查询到 {len(records)} 条记录")
+        
+        # 检查新记录
+        for record in records:
+            record_id = record.get('id')
+            if not record_id:
                 continue
-
-            # 确保 captcha_data 不是 None
-            if not captcha_data:
-                logger.error(f"API 返回空数据，响应内容: {captcha_resp.text}")
-                raise ValueError("API 返回的数据为空")
-            
-            # 确保 captcha_data 结构正确
-            if "data" not in captcha_data or "repData" not in captcha_data["data"]:
-                logger.error(f"API 返回的数据格式不正确: {captcha_data}")
-                raise ValueError("API 返回的数据缺少 'data' 或 'repData' 字段")
-
-            # ========== 验证码识别 ==========
-            # 获取原始坐标（无需缩放计算）
-            pos = getImgPos(
-                captcha_data['data']['repData']['originalImageBase64'],
-                captcha_data['data']['repData']['jigsawImageBase64'],
-                scale_factor=400 / 310
-            )
-            posStr =  '{"x":' + str(pos * (310 / 400)) + ',"y":5}'
-            
-            # ========== 加密参数生成 ==========
-            encrypted_pos = aes_encrypt(
-                posStr,
-                captcha_data['data']['repData']['secretKey']
-            )
-            logger.info(f"加密参数 {encrypted_pos}")
-            # ========== 验证码校验 ==========
-            check_resp = session.post(
-                f"{BASE_url}/code/check",
-                json={
-                    "captchaType": "blockPuzzle",
-                    "clientUid": clientUUID,
-                    "pointJson": encrypted_pos,
-                    "token": captcha_data['data']['repData']['token'],
-                    "ts": current_timestamp_milliseconds
-                },
-                headers=headers,
-                timeout=15
-            )
-           # 校验结果检查（修复变量引用顺序）
-            try:
-                check_data = check_resp.json()
-                logger.debug(f"验证码校验响应: {check_data}")  # 添加调试日志
                 
-                # 根据实际接口响应结构调整判断条件
-                if check_data.get('code') != 0 or not check_data.get('data', {}).get('repData', {}).get('result'):
-                    logger.error(f"验证失败: {check_data}")
-                    raise ValueError("验证码校验未通过")
-            except json.JSONDecodeError:
-                logger.error(f"校验响应非JSON: {check_resp.text}")
-                continue
-
-            # ========== Token请求 ==========
-            captcha = aes_encrypt(captcha_data['data']['repData']['token'] + '---' + posStr, captcha_data['data']['repData']['secretKey'])
-            logger.info(f"加密后的 captcha: {captcha}")
-            token_resp = session.post(
-                f"{BASE_url}/auth/custom/token",
-                params={
-                    "username": "13487283013",
-                    "grant_type": "password",
-                    "scope": "server",
-                    "code": captcha,
-                    "randomStr": "blockPuzzle"
-                },
-                json={"sskjPassword": "2giTy1DTppbddyVBc0F6gMdSpT583XjDyJJxME2ocJ4="},
-                headers=headers,
-                timeout=15
-            )
+            current_ids.add(record_id)
+            if record_id not in existing_ids:
+                new_records.append(record)
+        
+        if new_records:
+            logger.success(f"发现 {len(new_records)} 条新记录")
             
-            # Token结果处理
-            try:
-                token_data = token_resp.json()
-                logger.info(f"返回 JSON: {token_data}")  
-                if 'access_token' in token_data:
-                    save_token(token_data['access_token'], token_data.get('expires_in', 7200))
-                    return token_data['access_token']
-                else:
-                    logger.error(f"Token获取失败: {token_data}")
-            except json.JSONDecodeError:
-                logger.error(f"Token响应非JSON: {token_resp.text}")
+            # 按时间排序 (从旧到新，这样通知中先显示最早的记录)
+            new_records.sort(key=lambda x: x.get('verifyTime', 0))
             
-        except Exception as e:
-            logger.error(f"尝试{attempt}失败详情:")
-            logger.error(f"错误类型: {type(e).__name__}")
-            logger.error(f"错误信息: {str(e)}")
-            time.sleep(random.uniform(1, 5))
-    
-    raise Exception("无法获取有效Token")
-
+            messages = []
+            for r in new_records:
+                timestamp = r.get('verifyTime', 0) / 1000
+                # 将时间戳转换为UTC时间
+                utc_time = datetime.utcfromtimestamp(timestamp)
+                # 添加8小时偏移，转为北京时间
+                beijing_time = utc_time + timedelta(hours=8)
+                
+                # 获取项目名称，如果不存在则使用默认值
+                project_name = r.get('engName', '未知项目')
+                if not project_name or project_name == 'null':
+                    project_name = r.get('projectName', '未知项目')
+                    
+                # 获取进出状态
+                status = r.get('inOrOut', '未知')
+                status_text = "进入" if status == 'in' else "离开"
+                status_color = "info" if status == 'in' else "warning"
+                
+                messages.append(
+                    f"## 🎉 **新考勤记录** 🎉\n"
+                    f"> **项目名称**: {project_name}\n"
+                    f"> **姓名**: {r.get('name', '未知')}\n"
+                    f"> **岗位**: {r.get('jobName', '未知')}\n"
+                    f"> **时间**: <font color=\"info\">{beijing_time.strftime('%Y-%m-%d %H:%M:%S')}</font> (北京时间)\n"
+                    f"> **状态**: <font color=\"{status_color}\">{status_text}</font>\n"
+                )
+            
+            # 添加标题和总结信息
+            content = f"# 📢 发现 {len(new_records)} 条新考勤记录\n\n" + "\n\n".join(messages)
+            
+            # 发送通知
+            if send_wexinqq_md(content):
+                # 通知发送成功后才保存ID
+                save_new_ids(existing_ids.union(current_ids))
+                return True
+            else:
+                logger.error("通知发送失败，不更新记录ID")
+                return False
+        else:
+            logger.info("未发现新记录")
+            return False
+            
+    except Exception as e:
+        logger.error(f"检查新记录时出错: {str(e)}")
+        return False
 
 # ================== 主循环 ==================
 def main():
     try:
-        # Token有效性检查
-        # token_data = load_token()
-        # if not is_token_valid(token_data):
-        #     logger.info("Token无效或已过期，需要刷新")
-        #     access_token = refresh_token()
-        # else:
-        #     access_token = token_data['access_token']
-        token_data = load_token()
-        access_token = token_data['access_token']
         # 数据检查
-        if check_new_records(access_token):
+        if check_new_records():
             logger.success("发现新记录并成功通知")
         else:
             logger.info("未发现新记录")
@@ -404,4 +218,7 @@ def main():
         logger.error(f"主循环异常: {str(e)}")
 
 if __name__ == "__main__":
+    import time
+    logger.add("attendance_monitor.log", rotation="10 MB", retention="7 days")
+    logger.info("======= 考勤监控程序启动 =======")
     main()
