@@ -326,7 +326,7 @@ def check_new_records():
             
             # 发送完成消息
             if send_success:
-                send_wexinqq_md(f"# ✅ 考勤通知已完成\n共处理 {len(new_records)} 条新记录")
+                logger.info(f"考勤通知已完成，共处理 {len(new_records)} 条新记录")
             
             # 通知发送成功后才保存ID
             if send_success:
