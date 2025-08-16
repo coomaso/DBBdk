@@ -1,0 +1,52 @@
+name: DBB打卡查询程序
+
+on:
+  schedule:
+    - cron: "*/6 * * * *"  # 每小时执行一次
+  push:
+    branches: [ "main" ]  # 仅在推送到 main 分支时执行
+
+permissions:
+  contents: write  # 需要写入仓库权限（提交文件）
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3  # 获取仓库代码
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"  # 设置 Python 版本为 3.10
+
+    - name: Install dependencies
+      run: |
+        python3 -m pip install --upgrade pip
+        pip install pycryptodome requests loguru opencv-python-headless numpy pillow
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi  # 安装依赖
+
+    - name: Run Python script (access_token.py)
+      env: 
+        QYWX_URL: ${{ secrets.QYWX_URL }}  # 添加此行以传递Secret
+      run: |
+        python3 zhijiang.py  # 执行 access_token.py 脚本，生成 token.json 和 ids.json
+
+    - name: Commit and push token.json and ids.json to the repository
+      run: |
+        # 配置 Git 用户信息
+        git config user.name "coomaso"
+        git config user.email "coomaso@gmail.com"
+        
+        # 检查 token.json 和 ids.json 是否有更改
+        git add zjids.json
+
+        # 提交更改，如果没有更改则跳过
+        git commit -m "Update token.json and ids.json" || echo "No changes to commit"
+
+        # 推送到远程仓库
+        git push origin main
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 使用 GitHub 默认的 GITHUB_TOKEN 来执行推送
