@@ -129,50 +129,36 @@ def save_new_ids(ids):
         logger.error(f"保存ID集合失败: {str(e)}")
 
 def fetch_records_for_name(name):
-    """获取单个名字的所有分页数据"""
-    records = []
-    page = 1
+    """获取单个名字的第一页数据"""
     try:
         # 构建查询URL
-        # url = f"{login_url}?page={page}&limit=10&name={name}&orderByField=verifyTime&isAsc=false"
         url = f"{login_url}?page=1&limit=10&name={name}&orderByField=verifyTime&isAsc=false"
         logger.debug(f"请求URL: {url}")
         
         response = requests.get(url, headers=headers, timeout=60)
-        logger.info(f"请求 {name} 的考勤记录, 页码: {page}, 状态码: {response.status_code}")
+        logger.info(f"请求 {name} 的考勤记录, 状态码: {response.status_code}")
         
         if response.status_code != 200:
             logger.error(f"请求失败: {response.text}")
-            break
+            return []
 
         json_data = response.json()
 
         # 兼容处理不同结构
         if "data" in json_data and isinstance(json_data["data"], dict):
-            page_records = json_data["data"].get("records", [])
+            records = json_data["data"].get("records", [])
         elif "records" in json_data and isinstance(json_data["records"], list):
-            page_records = json_data["records"]
+            records = json_data["records"]
         else:
             logger.error(f"响应格式异常: {json_data}")
-            break
+            return []
 
-        if not page_records:
-            logger.info(f"名字 {name} 的第 {page} 页没有更多记录了")
-            break
-
-        records.extend(page_records)
-        logger.info(f"第 {page} 页获取到 {len(page_records)} 条记录")
-        page += 1
-        
-        # 添加延迟避免请求过快
-        time.sleep(0.5)
+        logger.info(f"获取到 {name} 的 {len(records)} 条记录")
+        return records
         
     except Exception as e:
         logger.error(f"获取数据失败: {e}")
-        break
-    
-    logger.info(f"总共获取到 {len(records)} 条 {name} 的记录")
-    return records
+        return []
 
 def fetch_all_records():
     """获取所有名字的所有记录"""
@@ -323,10 +309,6 @@ def check_new_records():
             # 分页发送消息
             message_list = [summary] + messages
             send_success = send_paginated_messages(message_list)
-            
-            # 发送完成消息
-            if send_success:
-                logger.info(f"考勤通知已完成，共处理 {len(new_records)} 条新记录")
             
             # 通知发送成功后才保存ID
             if send_success:
