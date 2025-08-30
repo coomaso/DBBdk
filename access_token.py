@@ -135,10 +135,11 @@ def fetch_records_for_name(name):
     while True:
         try:
             # 构建查询URL
-            url = f"{login_url}?page={page}&limit=100&name={name}&orderByField=verifyTime&isAsc=false"
+            # url = f"{login_url}?page={page}&limit=10&name={name}&orderByField=verifyTime&isAsc=false"
+            url = f"{login_url}?page=1&limit=10&name={name}&orderByField=verifyTime&isAsc=false"
             logger.debug(f"请求URL: {url}")
             
-            response = requests.get(url, headers=headers, timeout=15)
+            response = requests.get(url, headers=headers, timeout=60)
             logger.info(f"请求 {name} 的考勤记录, 页码: {page}, 状态码: {response.status_code}")
             
             if response.status_code != 200:
