@@ -107,24 +107,24 @@ def send_paginated_messages(messages):
 def load_existing_ids():
     """加载已记录的ID集合"""
     try:
-        if os.path.exists('ids.json'):
-            with open('ids.json') as f:
+        if os.path.exists('zjids.json'):
+            with open('zjids.json') as f:
                 ids = json.load(f)
                 logger.info(f"成功加载 {len(ids)} 条历史记录ID")
                 return set(ids)
         else:
-            logger.warning("未找到ids.json文件，将创建新文件")
+            logger.warning("未找到zjids.json文件，将创建新文件")
             return set()
     except json.JSONDecodeError:
-        logger.error("ids.json文件格式错误，将重新创建")
+        logger.error("zjids.json文件格式错误，将重新创建")
         return set()
 
 def save_new_ids(ids):
     """保存新的ID集合"""
     try:
-        with open('ids.json', 'w') as f:
+        with open('zjids.json', 'w') as f:
             json.dump(list(ids), f)
-        logger.info(f"成功保存{len(ids)}条记录ID到ids.json")
+        logger.info(f"成功保存{len(ids)}条记录ID到zjids.json")
     except Exception as e:
         logger.error(f"保存ID集合失败: {str(e)}")
 
