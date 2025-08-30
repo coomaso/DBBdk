@@ -12,7 +12,7 @@ max_attempts = 10
 names = ["唐丽", "周民锋","朱陈超", "黄正明"]
 BASE_url = "http://106.15.60.27:33333"
 login_url = "http://106.15.60.27:33333/laboratt/attendance/page"
-wexinqq_url = os.environ["QYWX_URL"]
+wexinqq_url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=fc744023-75ec-420d-95d1-d9c896117c29"
 
 # 企业微信消息长度限制 (4096字符)
 MAX_MESSAGE_LENGTH = 2000  # 保留一些空间
