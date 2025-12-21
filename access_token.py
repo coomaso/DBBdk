@@ -173,38 +173,36 @@ def fetch_all_records():
     all_records.sort(key=lambda x: x.get('verifyTime', 0), reverse=True)
     return all_records
 
-def calculate_work_duration(record, grouped_records):
-    """计算工作时长（仅适用于离开记录）"""
+def calculate_daily_work_duration(name, date_key, grouped_records):
+    """计算某人某天的工作时长"""
     try:
-        # 获取记录时间
-        timestamp = record.get('verifyTime', 0) / 1000
-        if not timestamp:
+        day_records = grouped_records.get((name, date_key))
+        if not day_records:
             return None
         
-        # 转换为北京时间
-        utc_time = datetime.utcfromtimestamp(timestamp)
-        beijing_time = utc_time + timedelta(hours=8)
-        date_key = beijing_time.date().isoformat()
-        
-        # 获取姓名
-        name = record.get('name', '未知')
-        
         # 获取当天所有进入记录
-        in_records = grouped_records.get((name, date_key), {}).get('in', [])
+        in_records = day_records.get('in', [])
+        # 获取当天所有离开记录
+        out_records = day_records.get('out', [])
         
-        # 如果没有进入记录，无法计算时长
-        if not in_records:
+        # 如果没有进入记录或没有离开记录，无法计算时长
+        if not in_records or not out_records:
+            logger.debug(f"{name} 在 {date_key} 缺少进出记录，无法计算工作时长")
             return None
         
         # 找到最早的进入记录
         earliest_in = min(in_records, key=lambda x: x['beijing_time'])
+        # 找到最晚的离开记录
+        latest_out = max(out_records, key=lambda x: x['beijing_time'])
         
         # 计算工作时长（小时）
-        work_duration = (beijing_time - earliest_in['beijing_time']).total_seconds() / 3600
+        work_duration = (latest_out['beijing_time'] - earliest_in['beijing_time']).total_seconds() / 3600
+        
+        logger.info(f"{name} 在 {date_key} 的工作时长: {work_duration:.2f}小时 (最早进入: {earliest_in['beijing_time'].strftime('%H:%M:%S')}, 最晚离开: {latest_out['beijing_time'].strftime('%H:%M:%S')})")
         return work_duration
     
     except Exception as e:
-        logger.error(f"计算工作时长失败: {str(e)}")
+        logger.error(f"计算 {name} 在 {date_key} 的工作时长失败: {str(e)}")
         return None
 
 def check_new_records():
@@ -248,10 +246,25 @@ def check_new_records():
                     
                     # 按姓名和日期分组
                     key = (record.get('name', '未知'), date_key)
-                    grouped_records[key][record.get('inOrOut', 'unknown')].append(record)
+                    status = record.get('inOrOut', 'unknown')
+                    grouped_records[key][status].append(record)
+            
+            # 计算每个人每天的工作时长并存储
+            daily_work_durations = {}
+            for (name, date_key), day_records in grouped_records.items():
+                work_duration = calculate_daily_work_duration(name, date_key, grouped_records)
+                if work_duration is not None:
+                    daily_work_durations[(name, date_key)] = work_duration
             
             messages = []
-            warning_count = 0
+            warning_records = []  # 存储需要警告的记录
+            
+            # 首先，找出所有需要警告的日期（工作时长不足）
+            warning_dates = set()
+            for (name, date_key), duration in daily_work_durations.items():
+                if duration < WORK_DURATION_THRESHOLD:
+                    warning_dates.add((name, date_key))
+                    logger.warning(f"{name} 在 {date_key} 的工作时长不足: {duration:.2f}小时 (< {WORK_DURATION_THRESHOLD}小时)")
             
             for r in new_records:
                 # 获取北京时间（已在上一步添加）
@@ -287,24 +300,33 @@ def check_new_records():
                     f"> **状态**: <font color=\"{status_color}\">{status_text}</font>\n"
                 )
                 
-                # 如果是离开记录，检查工作时长
-                if status == 'out' and isinstance(beijing_time, datetime):
-                    work_duration = calculate_work_duration(r, grouped_records)
+                # 如果是离开记录，添加当天工作时长信息
+                if isinstance(beijing_time, datetime):
+                    name = r.get('name', '未知')
+                    date_key = beijing_time.date().isoformat()
+                    
+                    # 获取当天的工作时长
+                    work_duration = daily_work_durations.get((name, date_key))
                     if work_duration is not None:
                         # 添加工作时长信息
-                        message += f"> **工作时长**: {work_duration:.2f}小时\n"
+                        message += f"> **当天工作时长**: {work_duration:.2f}小时\n"
                         
                         # 检查是否不足4小时
                         if work_duration < WORK_DURATION_THRESHOLD:
-                            warning_count += 1
+                            warning_records.append(r)
                             message += f"> **警告**: <font color=\"warning\">工作时长不足{WORK_DURATION_THRESHOLD}小时！</font>\n"
                 
                 messages.append(message)
             
             # 添加总标题
             summary = f"# 📢 发现 {len(new_records)} 条新考勤记录\n"
-            if warning_count > 0:
-                summary += f"## ⚠️ 其中有 {warning_count} 条工作时长不足{WORK_DURATION_THRESHOLD}小时\n\n"
+            if warning_records:
+                warning_dates_list = list(set([(r.get('name', '未知'), r['beijing_time'].date().isoformat()) for r in warning_records if isinstance(r.get('beijing_time'), datetime)]))
+                summary += f"## ⚠️ 其中有 {len(warning_dates_list)} 天的工作时长不足{WORK_DURATION_THRESHOLD}小时\n"
+                for name, date_key in warning_dates_list:
+                    duration = daily_work_durations.get((name, date_key), 0)
+                    summary += f"> **{name}** 在 **{date_key}** 的工作时长: {duration:.2f}小时\n"
+                summary += "\n"
             
             # 分页发送消息
             message_list = [summary] + messages
