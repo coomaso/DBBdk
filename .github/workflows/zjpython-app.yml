@@ -1,4 +1,4 @@
-name: DBB打卡查询程序
+name: 枝江项目打卡查询
 
 on:
   schedule:
